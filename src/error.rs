@@ -1,6 +1,5 @@
 //! Error types to wrap internal errors and make EPP errors easier to read
 
-use std::array::TryFromSliceError;
 use std::error::Error as StdError;
 use std::fmt::{self, Display};
 use std::io;
@@ -13,8 +12,10 @@ use crate::response::ResponseStatus;
 /// Error enum holding the possible error types
 #[derive(Debug)]
 pub enum Error {
+    Closed,
     Command(Box<ResponseStatus>),
     Io(std::io::Error),
+    Reconnect,
     Timeout,
     Xml(Box<dyn StdError + Send + Sync>),
     Other(Box<dyn StdError + Send + Sync>),
@@ -25,10 +26,12 @@ impl StdError for Error {}
 impl Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Error::Closed => write!(f, "closed"),
             Error::Command(e) => {
                 write!(f, "command error: {}", e.result.message)
             }
             Error::Io(e) => write!(f, "I/O error: {}", e),
+            Error::Reconnect => write!(f, "failed to reconnect"),
             Error::Timeout => write!(f, "timeout"),
             Error::Xml(e) => write!(f, "(de)serialization error: {}", e),
             Error::Other(e) => write!(f, "error: {}", e),
@@ -68,12 +71,6 @@ impl From<FromUtf8Error> for Error {
 
 impl From<Utf8Error> for Error {
     fn from(e: Utf8Error) -> Self {
-        Self::Other(e.into())
-    }
-}
-
-impl From<TryFromSliceError> for Error {
-    fn from(e: TryFromSliceError) -> Self {
         Self::Other(e.into())
     }
 }

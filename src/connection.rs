@@ -1,300 +1,113 @@
 //! Manages registry connections and reading/writing to them
 
+use std::borrow::Cow;
+use std::convert::TryInto;
 use std::future::Future;
-use std::pin::Pin;
-use std::task::{Context, Poll};
 use std::time::Duration;
-use std::{io, mem, str, u32};
+use std::{io, str, u32};
 
-use async_trait::async_trait;
-use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt, ReadBuf};
-use tracing::{debug, info};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::sync::mpsc;
+use tracing::{debug, error, info, trace, warn};
 
+use crate::connect::Connector;
 use crate::error::Error;
+use crate::hello::HelloDocument;
+use crate::xml;
 
-/// EPP Connection struct with some metadata for the connection
-pub(crate) struct EppConnection<C: Connector> {
-    pub registry: String,
+/// EPP Connection
+///
+/// This is the I/O half, returned when creating a new connection, that performs the actual I/O and thus
+/// should be spawned in it's own task.
+///
+/// [`EppConnection`] provides a [`EppConnection::run`](EppConnection::run) method, which only resolves when the connection is closed,
+/// either because a fatal error has occurred, or because its associated [`EppClient`](super::EppClient) has been dropped
+/// and all outstanding work has been completed.
+///
+/// # Keepalive (Idle Timeout)
+///
+/// EppConnection supports a keepalive mechanism.
+/// When `idle_timeout` is set, every time the timeout reaches zero while waiting for a new request from the
+/// [`EppClient`](super::EppClient), a `<hello>` request is sent to the epp server.
+/// This is in line with VeriSign's guidelines. VeriSign uses an idle timeout of 10 minutes and an absolute timeout of 24h.
+/// Choosing an `idle_timeout` of 8 minutes should be sufficient to not run into VeriSign's idle timeout.
+/// Other registry operators might need other values.
+///
+/// # Reconnect (Absolute Timeout)
+///
+/// Reconnecting, to gracefully allow a [`EppConnection`] to be "active", is currently not implemented. But a reconnect
+/// command is present to initiate the reconnect from the outside
+pub struct EppConnection<C: Connector> {
+    registry: Cow<'static, str>,
     connector: C,
     stream: C::Connection,
-    pub greeting: String,
+    greeting: String,
     timeout: Duration,
-    // A request that is currently in flight
-    //
-    // Because the code here currently depends on only one request being in flight at a time,
-    // this needs to be finished (written, and response read) before we start another one.
-    current: Option<RequestState>,
-    // The next request to be sent
-    //
-    // If we get a request while another request is in flight (because its future was dropped),
-    // we will store it here until the current request is finished.
-    next: Option<RequestState>,
+    idle_timeout: Option<Duration>,
+    /// A receiver for receiving requests from [`EppClients`](super::client::EppClient) for the underlying connection.
+    receiver: mpsc::UnboundedReceiver<Request>,
+    state: ConnectionState,
 }
 
 impl<C: Connector> EppConnection<C> {
     pub(crate) async fn new(
         connector: C,
-        registry: String,
-        timeout: Duration,
+        registry: Cow<'static, str>,
+        receiver: mpsc::UnboundedReceiver<Request>,
+        request_timeout: Duration,
+        idle_timeout: Option<Duration>,
     ) -> Result<Self, Error> {
         let mut this = Self {
             registry,
-            stream: connector.connect(timeout).await?,
+            stream: connector.connect(request_timeout).await?,
             connector,
+            receiver,
             greeting: String::new(),
-            timeout,
-            current: None,
-            next: None,
+            timeout: request_timeout,
+            idle_timeout,
+            state: Default::default(),
         };
 
-        this.read_greeting().await?;
+        this.greeting = this.read_epp_response().await?;
+        this.state = ConnectionState::Open;
         Ok(this)
     }
 
-    async fn read_greeting(&mut self) -> Result<(), Error> {
-        assert!(self.current.is_none());
-        self.current = Some(RequestState::ReadLength {
-            read: 0,
-            buf: vec![0; 256],
-        });
-
-        self.greeting = RequestFuture { conn: self }.await?;
-        Ok(())
-    }
-
-    pub(crate) async fn reconnect(&mut self) -> Result<(), Error> {
-        debug!("{}: reconnecting", self.registry);
-        let _ = self.current.take();
-        let _ = self.next.take();
-        self.stream = self.connector.connect(self.timeout).await?;
-        self.read_greeting().await?;
-        Ok(())
-    }
-
-    /// Sends an EPP XML request to the registry and returns the response
-    pub(crate) fn transact<'a>(&'a mut self, command: &str) -> Result<RequestFuture<'a, C>, Error> {
-        let new = RequestState::new(command)?;
-
-        // If we have a request currently in flight, finish that first
-        // If another request was queued up behind the one in flight, just replace it
-        match self.current.is_some() {
-            true => {
-                debug!(
-                    "{}: Queueing up request in order to finish in-flight request",
-                    self.registry
-                );
-                self.next = Some(new);
-            }
-            false => self.current = Some(new),
-        }
-
-        Ok(RequestFuture { conn: self })
-    }
-
-    /// Closes the socket and shuts down the connection
-    pub(crate) async fn shutdown(&mut self) -> Result<(), Error> {
-        info!("{}: Closing connection", self.registry);
-        timeout(self.timeout, self.stream.shutdown()).await?;
-        Ok(())
-    }
-
-    fn handle(
-        &mut self,
-        mut state: RequestState,
-        cx: &mut Context<'_>,
-    ) -> Result<Transition, Error> {
-        match &mut state {
-            RequestState::Writing { mut start, buf } => {
-                let wrote = match Pin::new(&mut self.stream).poll_write(cx, &buf[start..]) {
-                    Poll::Ready(Ok(wrote)) => wrote,
-                    Poll::Ready(Err(err)) => return Err(err.into()),
-                    Poll::Pending => return Ok(Transition::Pending(state)),
-                };
-
-                if wrote == 0 {
-                    return Err(io::Error::new(
-                        io::ErrorKind::UnexpectedEof,
-                        format!("{}: Unexpected EOF while writing", self.registry),
-                    )
-                    .into());
-                }
-
-                start += wrote;
-                debug!(
-                    "{}: Wrote {} bytes, {} out of {} done",
-                    self.registry,
-                    wrote,
-                    start,
-                    buf.len()
-                );
-
-                // Transition to reading the response's frame header once
-                // we've written the entire request
-                if start < buf.len() {
-                    return Ok(Transition::Next(state));
-                }
-
-                Ok(Transition::Next(RequestState::ReadLength {
-                    read: 0,
-                    buf: vec![0; 256],
-                }))
-            }
-            RequestState::ReadLength { mut read, buf } => {
-                let mut read_buf = ReadBuf::new(&mut buf[read..]);
-                match Pin::new(&mut self.stream).poll_read(cx, &mut read_buf) {
-                    Poll::Ready(Ok(())) => {}
-                    Poll::Ready(Err(err)) => return Err(err.into()),
-                    Poll::Pending => return Ok(Transition::Pending(state)),
-                };
-
-                let filled = read_buf.filled();
-                if filled.is_empty() {
-                    return Err(io::Error::new(
-                        io::ErrorKind::UnexpectedEof,
-                        format!("{}: Unexpected EOF while reading length", self.registry),
-                    )
-                    .into());
-                }
-
-                // We're looking for the frame header which tells us how long the response will be.
-                // The frame header is a 32-bit (4-byte) big-endian unsigned integer. If we don't
-                // have 4 bytes yet, stay in the `ReadLength` state, otherwise we transition to `Reading`.
-
-                read += filled.len();
-                if read < 4 {
-                    return Ok(Transition::Next(state));
-                }
-
-                let expected = u32::from_be_bytes(filled[..4].try_into()?) as usize;
-                debug!("{}: Expected response length: {}", self.registry, expected);
-                buf.resize(expected, 0);
-                Ok(Transition::Next(RequestState::Reading {
-                    read,
-                    buf: mem::take(buf),
-                    expected,
-                }))
-            }
-            RequestState::Reading {
-                mut read,
-                buf,
-                expected,
-            } => {
-                let mut read_buf = ReadBuf::new(&mut buf[read..]);
-                match Pin::new(&mut self.stream).poll_read(cx, &mut read_buf) {
-                    Poll::Ready(Ok(())) => {}
-                    Poll::Ready(Err(err)) => return Err(err.into()),
-                    Poll::Pending => return Ok(Transition::Pending(state)),
-                }
-
-                let filled = read_buf.filled();
-                if filled.is_empty() {
-                    return Err(io::Error::new(
-                        io::ErrorKind::UnexpectedEof,
-                        format!("{}: Unexpected EOF while reading", self.registry),
-                    )
-                    .into());
-                }
-
-                read += filled.len();
-                debug!(
-                    "{}: Read {} bytes, {} out of {} done",
-                    self.registry,
-                    filled.len(),
-                    read,
-                    expected
-                );
-
-                //
-
-                Ok(if read < *expected {
-                    // If we haven't received the entire response yet, stick to the `Reading` state.
-                    Transition::Next(state)
-                } else if let Some(next) = self.next.take() {
-                    // Otherwise, if we were just pushing through this request because it was already
-                    // in flight when we started a new one, ignore this response and move to the
-                    // next request (the one this `RequestFuture` is actually for).
-                    Transition::Next(next)
-                } else {
-                    // Otherwise, drain off the frame header and convert the rest to a `String`.
-                    buf.drain(..4);
-                    Transition::Done(String::from_utf8(mem::take(buf))?)
-                })
-            }
-        }
-    }
-}
-
-pub(crate) struct RequestFuture<'a, C: Connector> {
-    conn: &'a mut EppConnection<C>,
-}
-
-impl<'a, C: Connector> Future for RequestFuture<'a, C> {
-    type Output = Result<String, Error>;
-
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let this = self.get_mut();
-        loop {
-            let state = this.conn.current.take().unwrap();
-            match this.conn.handle(state, cx) {
-                Ok(Transition::Next(next)) => {
-                    this.conn.current = Some(next);
-                    continue;
-                }
-                Ok(Transition::Pending(state)) => {
-                    this.conn.current = Some(state);
-                    return Poll::Pending;
-                }
-                Ok(Transition::Done(rsp)) => return Poll::Ready(Ok(rsp)),
+    /// Runs the connection
+    ///
+    /// This will loops and awaits new requests from the client half and sends the request to the epp server
+    /// awaiting a response.
+    ///
+    /// Spawn this in a task and await run to resolve.
+    /// This resolves when the connection to the epp server gets dropped.
+    ///
+    /// # Examples
+    /// ```[no_compile]
+    /// let mut connection = <obtained via connect::connect()>
+    /// tokio::spawn(async move {
+    ///     if let Err(err) = connection.run().await {
+    ///         error!("connection failed: {err}")
+    ///     }
+    /// });
+    pub async fn run(&mut self) -> Result<(), Error> {
+        while let Some(message) = self.message().await {
+            match message {
+                Ok(message) => info!("{message}"),
                 Err(err) => {
-                    // Assume the error means the connection can no longer be used
-                    this.conn.next = None;
-                    return Poll::Ready(Err(err));
+                    error!("{err}");
+                    break;
                 }
             }
         }
+        trace!("stopping EppConnection task");
+        Ok(())
     }
-}
 
-// Transitions between `RequestState`s
-enum Transition {
-    Pending(RequestState),
-    Next(RequestState),
-    Done(String),
-}
-
-#[derive(Debug)]
-enum RequestState {
-    // Writing the request command out to the peer
-    Writing {
-        // The amount of bytes we've already written
-        start: usize,
-        // The full XML request
-        buf: Vec<u8>,
-    },
-    // Reading the frame header (32-bit big-endian unsigned integer)
-    ReadLength {
-        // The amount of bytes we've already read
-        read: usize,
-        // The buffer we're using to read into
-        buf: Vec<u8>,
-    },
-    // Reading the entire frame
-    Reading {
-        // The amount of bytes we've already read
-        read: usize,
-        // The buffer we're using to read into
-        //
-        // This will still have the frame header in it, needs to be cut off before
-        // yielding the response to the caller.
-        buf: Vec<u8>,
-        // The expected length of the response according to the frame header
-        expected: usize,
-    },
-}
-
-impl RequestState {
-    fn new(command: &str) -> Result<Self, Error> {
-        let len = command.len();
+    /// Sends the given content to the used [`Connector::Connection`]
+    ///
+    /// Returns an EOF error when writing to the stream results in 0 bytes written.
+    async fn write_epp_request(&mut self, content: &str) -> Result<(), Error> {
+        let len = content.len();
 
         let buf_size = len + 4;
         let mut buf: Vec<u8> = vec![0u8; buf_size];
@@ -303,8 +116,168 @@ impl RequestState {
         let len_u32: [u8; 4] = u32::to_be_bytes(len.try_into()?);
 
         buf[..4].clone_from_slice(&len_u32);
-        buf[4..].clone_from_slice(command.as_bytes());
-        Ok(Self::Writing { start: 0, buf })
+        buf[4..].clone_from_slice(content.as_bytes());
+
+        let wrote = timeout(self.timeout, self.stream.write(&buf)).await?;
+        // A write return value of 0 means the underlying socket
+        // does no longer accept any data.
+        if wrote == 0 {
+            warn!("Got EOF while writing");
+            self.state = ConnectionState::Closed;
+            return Err(io::Error::new(
+                io::ErrorKind::UnexpectedEof,
+                format!("{}: unexpected eof", self.registry),
+            )
+            .into());
+        }
+
+        debug!(registry = %self.registry, "Wrote {} bytes", wrote);
+        Ok(())
+    }
+
+    /// Receives response from the socket and converts it into an EPP XML string
+    async fn read_epp_response(&mut self) -> Result<String, Error> {
+        // We're looking for the frame header which tells us how long the response will be.
+        // The frame header is a 32-bit (4-byte) big-endian unsigned integer.
+        let mut buf = [0u8; 4];
+        timeout(self.timeout, self.stream.read_exact(&mut buf)).await?;
+
+        let buf_size: usize = u32::from_be_bytes(buf).try_into()?;
+
+        let message_size = buf_size - 4;
+        debug!(
+            registry = %self.registry,
+            "Response buffer size: {}", message_size
+        );
+
+        let mut buf = vec![0; message_size];
+        let mut read_size: usize = 0;
+
+        loop {
+            let read = timeout(self.timeout, self.stream.read(&mut buf[read_size..])).await?;
+            debug!(registry = %self.registry, "Read: {} bytes", read);
+
+            read_size += read;
+            debug!(registry = %self.registry, "Total read: {} bytes", read_size);
+
+            if read == 0 {
+                self.state = ConnectionState::Closed;
+                return Err(io::Error::new(
+                    io::ErrorKind::UnexpectedEof,
+                    format!("{}: unexpected eof", self.registry),
+                )
+                .into());
+            } else if read_size >= message_size {
+                break;
+            }
+        }
+
+        Ok(String::from_utf8(buf)?)
+    }
+
+    async fn reconnect(&mut self) -> Result<(), Error> {
+        debug!(registry = %self.registry, "reconnecting");
+        self.state = ConnectionState::Opening;
+        self.stream = self.connector.connect(self.timeout).await?;
+        self.greeting = self.read_epp_response().await?;
+        self.state = ConnectionState::Open;
+        Ok(())
+    }
+
+    async fn wait_for_shutdown(&mut self) -> Result<(), io::Error> {
+        self.state = ConnectionState::Closing;
+        match self.stream.shutdown().await {
+            Ok(_) => {
+                self.state = ConnectionState::Closed;
+                Ok(())
+            }
+            Err(err) => Err(err),
+        }
+    }
+
+    async fn request_or_keepalive(&mut self) -> Result<Option<Request>, Error> {
+        loop {
+            let Some(idle_timeout) = self.idle_timeout else {
+                // We do not have any keep alive set, just forward to waiting for a request.
+                return Ok(self.receiver.recv().await);
+            };
+            trace!(registry = %self.registry, "Waiting for {idle_timeout:?} for new request until keepalive");
+            match tokio::time::timeout(idle_timeout, self.receiver.recv()).await {
+                Ok(request) => return Ok(request),
+                Err(_) => {
+                    self.keepalive().await?;
+                    // We sent the keepalive. Go back to wait for requests.
+                    continue;
+                }
+            }
+        }
+    }
+
+    async fn keepalive(&mut self) -> Result<(), Error> {
+        trace!(registry = %self.registry, "Sending keepalive hello");
+        // Send hello
+        let request = xml::serialize(&HelloDocument::default())?;
+        self.write_epp_request(&request).await?;
+
+        // Await new greeting
+        self.greeting = self.read_epp_response().await?;
+        Ok(())
+    }
+
+    /// This is the main method of the I/O tasks
+    ///
+    /// It will try to get a request, write it to the wire and waits for the response.
+    ///
+    /// Once this returns `None`, or `Ok(Err(_))`, the connection is expected to be closed.
+    async fn message(&mut self) -> Option<Result<Cow<'static, str>, Error>> {
+        // In theory this can be even speed up as the underlying stream is in our case bi-directional.
+        // But as the EPP RFC does not guarantee the order of responses we would need to
+        // match based on the transactions id. We can look into adding support for this in
+        // future.
+        loop {
+            if self.state == ConnectionState::Closed {
+                return None;
+            }
+
+            // Wait for new request or send a keepalive
+            let request = match self.request_or_keepalive().await {
+                Ok(request) => request,
+                Err(err) => return Some(Err(err)),
+            };
+            let Some(request) = request  else {
+                // The client got dropped. We can close the connection.
+                match self.wait_for_shutdown().await {
+                    Ok(_) => return None,
+                    Err(err) => return Some(Err(err.into())),
+                }
+            };
+
+            let response = match request.request {
+                RequestMessage::Greeting => Ok(self.greeting.clone()),
+                RequestMessage::Request(request) => {
+                    if let Err(err) = self.write_epp_request(&request).await {
+                        return Some(Err(err));
+                    }
+                    timeout(self.timeout, self.read_epp_response()).await
+                }
+                RequestMessage::Reconnect => match self.reconnect().await {
+                    Ok(_) => Ok(self.greeting.clone()),
+                    Err(err) => {
+                        // In this case we are not sure if the connection is in tact. Best we error out.
+                        let _ = request.sender.send(Err(Error::Reconnect)).await;
+                        return Some(Err(err));
+                    }
+                },
+            };
+
+            // Awaiting `send` should not block this I/O tasks unless we try to write multiple responses to the same bounded channel.
+            // As this crate is structured to create a new bounded channel for each request, this ok here.
+            if request.sender.send(response).await.is_err() {
+                // If the receive half of the sender is dropped, (i.e. the `Client`s `Future` is canceled)
+                // we can just ignore the err here and return to let `run` print something for this task.
+                return Some(Ok("request was canceled. Client dropped.".into()));
+            }
+        }
     }
 }
 
@@ -319,9 +292,25 @@ pub(crate) async fn timeout<T, E: Into<Error>>(
     }
 }
 
-#[async_trait]
-pub trait Connector {
-    type Connection: AsyncRead + AsyncWrite + Unpin;
+#[derive(Debug, Default, PartialEq, Eq)]
+enum ConnectionState {
+    #[default]
+    Opening,
+    Open,
+    Closing,
+    Closed,
+}
 
-    async fn connect(&self, timeout: Duration) -> Result<Self::Connection, Error>;
+pub(crate) struct Request {
+    pub(crate) request: RequestMessage,
+    pub(crate) sender: mpsc::Sender<Result<String, Error>>,
+}
+
+pub(crate) enum RequestMessage {
+    /// Request the stored server greeting
+    Greeting,
+    /// Reconnect the underlying [`Connector::Connection`]
+    Reconnect,
+    /// Raw request to be sent to the connected EPP Server
+    Request(String),
 }
