@@ -309,10 +309,55 @@ pub struct Extension<E> {
     pub data: E,
 }
 
-/// Collection of extensions from responses
+/// Collection of extensions from EPP responses
 ///
-/// Stores raw XML elements and provides lazy deserialization on demand.
-/// This allows handling multiple extensions without knowing all types at compile time.
+/// `ResponseExtensionCollection` stores extension data from the `<extension>` element
+/// in EPP responses. Extensions are stored as raw XML and deserialized on-demand when
+/// accessed via [`get()`](Self::get), enabling support for multiple extensions without
+/// compile-time knowledge of all types.
+///
+/// # Features
+///
+/// - **Lazy Deserialization**: Extensions are only parsed when requested
+/// - **Type-Safe Access**: Use generic [`get()`](Self::get) method to retrieve specific extensions
+/// - **Unknown Extension Support**: Gracefully handles extensions not known at compile time
+/// - **Multiple Extensions**: Can store any number of extensions from the same response
+///
+/// # Usage
+///
+/// This type is returned by [`ResponseWithExtensions`] and typically accessed through
+/// the [`extension()`](ResponseWithExtensions::extension) helper method.
+///
+/// # Examples
+///
+/// ```no_run
+/// # use instant_epp::{EppClient, Error};
+/// # use instant_epp::domain::DomainCheck;
+/// # use instant_epp::request::ExtensionCollection;
+/// # use instant_epp::extensions::namestore::{NameStore, NameStoreData};
+/// # async fn example(client: &mut EppClient) -> Result<(), Error> {
+/// let check = DomainCheck { domains: &["example.com"] };
+/// let extensions = ExtensionCollection::with(NameStore { subproduct: "dotCOM" })?;
+///
+/// let response = client.transact_multi(&check, extensions, "txn-001").await?;
+///
+/// // Type-safe access to specific extension
+/// if let Some(namestore) = response.extension::<NameStore>()? {
+///     println!("Namestore data: {:?}", namestore);
+/// }
+///
+/// // Check if an extension is present
+/// if response.extensions.contains::<NameStore>() {
+///     println!("Namestore extension was returned");
+/// }
+///
+/// // List all extension namespaces
+/// for ns in response.extensions.namespaces() {
+///     println!("Extension namespace: {}", ns);
+/// }
+/// # Ok(())
+/// # }
+/// ```
 #[derive(Debug, Default)]
 pub struct ResponseExtensionCollection {
     /// Stores (namespace, xml_content) tuples
@@ -321,10 +366,161 @@ pub struct ResponseExtensionCollection {
 
 impl ResponseExtensionCollection {
     /// Create a new empty response extension collection
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use instant_epp::response::ResponseExtensionCollection;
+    ///
+    /// let collection = ResponseExtensionCollection::new();
+    /// assert!(collection.is_empty());
+    /// ```
     pub fn new() -> Self {
         Self {
             elements: Vec::new(),
         }
+    }
+
+    /// Create a ResponseExtensionCollection from raw XML response string
+    ///
+    /// Extracts all child elements from the <extension> tag and stores them
+    /// as (namespace, xml_content) tuples for lazy deserialization.
+    pub(crate) fn from_response_xml(xml: &str) -> Result<Self, crate::Error> {
+        let mut collection = Self::new();
+
+        // Find the <extension> element
+        if let Some(ext_start) = xml.find("<extension>") {
+            if let Some(ext_end) = xml.find("</extension>") {
+                let extension_content = &xml[ext_start + 11..ext_end];
+
+                // Parse child elements within <extension>
+                collection.parse_extension_children(extension_content)?;
+            }
+        }
+
+        Ok(collection)
+    }
+
+    /// Parse child elements from extension content
+    fn parse_extension_children(&mut self, content: &str) -> Result<(), crate::Error> {
+        let content = content.trim();
+        let mut pos = 0;
+
+        while pos < content.len() {
+            // Skip whitespace
+            while pos < content.len() && content[pos..].chars().next().unwrap().is_whitespace() {
+                pos += 1;
+            }
+
+            if pos >= content.len() {
+                break;
+            }
+
+            // Find next element start
+            if let Some(start_pos) = content[pos..].find('<') {
+                let absolute_start = pos + start_pos;
+
+                // Skip comments and processing instructions
+                if content[absolute_start..].starts_with("<!--") {
+                    if let Some(comment_end) = content[absolute_start..].find("-->") {
+                        pos = absolute_start + comment_end + 3;
+                        continue;
+                    }
+                }
+
+                if content[absolute_start..].starts_with("<?") {
+                    if let Some(pi_end) = content[absolute_start..].find("?>") {
+                        pos = absolute_start + pi_end + 2;
+                        continue;
+                    }
+                }
+
+                // Extract element name and namespace
+                let after_bracket = absolute_start + 1;
+                let element_def_end = content[after_bracket..]
+                    .find('>')
+                    .map(|p| after_bracket + p)
+                    .unwrap_or(content.len());
+
+                let element_def = &content[after_bracket..element_def_end];
+
+                // Skip closing tags
+                if element_def.starts_with('/') {
+                    pos = element_def_end + 1;
+                    continue;
+                }
+
+                // Extract tag name
+                let tag_name = element_def
+                    .split_whitespace()
+                    .next()
+                    .unwrap_or("")
+                    .trim_end_matches('/');
+
+                // Extract namespace from xmlns attribute
+                let namespace = Self::extract_namespace(element_def);
+
+                // Find matching closing tag
+                let closing_tag = format!("</{}>", tag_name);
+                if let Some(close_pos) = content[element_def_end..].find(&closing_tag) {
+                    let absolute_close = element_def_end + close_pos + closing_tag.len();
+                    let element_xml = &content[absolute_start..absolute_close];
+
+                    if let Some(ns) = namespace {
+                        self.elements.push((ns, element_xml.to_string()));
+                    }
+
+                    pos = absolute_close;
+                } else {
+                    // Self-closing tag
+                    if element_def.ends_with('/') {
+                        let element_xml = &content[absolute_start..=element_def_end];
+                        if let Some(ns) = namespace {
+                            self.elements.push((ns, element_xml.to_string()));
+                        }
+                        pos = element_def_end + 1;
+                    } else {
+                        pos = element_def_end + 1;
+                    }
+                }
+            } else {
+                break;
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Extract namespace from element definition
+    fn extract_namespace(element_def: &str) -> Option<String> {
+        // Look for xmlns attribute
+        if let Some(xmlns_start) = element_def.find("xmlns=\"") {
+            let value_start = xmlns_start + 7;
+            if let Some(value_end) = element_def[value_start..].find('"') {
+                return Some(element_def[value_start..value_start + value_end].to_string());
+            }
+        }
+
+        // Look for xmlns:prefix attribute (take the first one we find)
+        if let Some(xmlns_start) = element_def.find("xmlns:") {
+            let after_xmlns = xmlns_start + 6;
+            // Skip prefix name
+            if let Some(eq_pos) = element_def[after_xmlns..].find('=') {
+                let value_start = after_xmlns + eq_pos + 1;
+                // Skip opening quote
+                let value_start = if element_def[value_start..].starts_with('"') {
+                    value_start + 1
+                } else {
+                    value_start
+                };
+
+                if let Some(value_end) = element_def[value_start..].find('"') {
+                    return Some(element_def[value_start..value_start + value_end].to_string());
+                }
+            }
+        }
+
+        None
     }
 
     /// Add a raw XML element to the collection
@@ -334,8 +530,29 @@ impl ResponseExtensionCollection {
 
     /// Get an extension by type, deserializing it on demand
     ///
-    /// Returns `Ok(Some(extension))` if the extension is found and successfully deserialized,
-    /// `Ok(None)` if the extension is not present, or `Err` if deserialization fails.
+    /// Searches for an extension matching the namespace of `E` and deserializes it if found.
+    /// Extensions are identified by their `XMLNS` constant.
+    ///
+    /// # Returns
+    ///
+    /// - `Ok(Some(extension))`: Extension found and successfully deserialized
+    /// - `Ok(None)`: Extension not present in the response
+    /// - `Err`: Deserialization failed (XML parsing error)
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # use instant_epp::response::ResponseExtensionCollection;
+    /// # use instant_epp::extensions::namestore::NameStore;
+    /// # fn example(collection: &ResponseExtensionCollection) -> Result<(), instant_epp::Error> {
+    /// // Get a specific extension type
+    /// match collection.get::<NameStore>()? {
+    ///     Some(namestore) => println!("Got namestore: {:?}", namestore),
+    ///     None => println!("Namestore not in response"),
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
     pub fn get<E: ExtensionTrait>(&self) -> Result<Option<E::Response>, crate::Error> {
         for (ns, xml_content) in &self.elements {
             if ns == E::XMLNS {
@@ -347,21 +564,78 @@ impl ResponseExtensionCollection {
     }
 
     /// Check if an extension of the given type is present
+    ///
+    /// Returns `true` if the collection contains an extension with the given type's namespace.
+    /// This is cheaper than [`get()`](Self::get) as it doesn't deserialize the extension.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # use instant_epp::response::ResponseExtensionCollection;
+    /// # use instant_epp::extensions::namestore::NameStore;
+    /// # fn example(collection: &ResponseExtensionCollection) {
+    /// if collection.contains::<NameStore>() {
+    ///     println!("Namestore extension is present");
+    /// }
+    /// # }
+    /// ```
     pub fn contains<E: ExtensionTrait>(&self) -> bool {
         self.elements.iter().any(|(ns, _)| ns == E::XMLNS)
     }
 
     /// Get a list of all extension namespaces present in the response
+    ///
+    /// Returns a vector of namespace URIs for all extensions in this collection.
+    /// Useful for debugging or discovering which extensions were returned.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # use instant_epp::response::ResponseExtensionCollection;
+    /// # fn example(collection: &ResponseExtensionCollection) {
+    /// let namespaces = collection.namespaces();
+    /// println!("Response contains {} extension(s)", namespaces.len());
+    /// for ns in namespaces {
+    ///     println!("  - {}", ns);
+    /// }
+    /// # }
+    /// ```
     pub fn namespaces(&self) -> Vec<&str> {
         self.elements.iter().map(|(ns, _)| ns.as_str()).collect()
     }
 
     /// Check if the collection is empty
+    ///
+    /// Returns `true` if no extensions were present in the response.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use instant_epp::response::ResponseExtensionCollection;
+    ///
+    /// let collection = ResponseExtensionCollection::new();
+    /// assert!(collection.is_empty());
+    /// ```
     pub fn is_empty(&self) -> bool {
         self.elements.is_empty()
     }
 
     /// Get the number of extensions in the collection
+    ///
+    /// Returns the count of extension elements in this collection.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # use instant_epp::response::ResponseExtensionCollection;
+    /// # fn example(collection: &ResponseExtensionCollection) {
+    /// match collection.len() {
+    ///     0 => println!("No extensions"),
+    ///     1 => println!("One extension"),
+    ///     n => println!("{} extensions", n),
+    /// }
+    /// # }
+    /// ```
     pub fn len(&self) -> usize {
         self.elements.len()
     }
@@ -369,7 +643,48 @@ impl ResponseExtensionCollection {
 
 /// Response with extension collection for multi-extension support
 ///
-/// Similar to `Response` but uses `ResponseExtensionCollection` for multiple extensions.
+/// `ResponseWithExtensions` is returned by [`EppClient::transact_multi()`](crate::client::EppClient::transact_multi)
+/// and contains the standard EPP response data plus a [`ResponseExtensionCollection`] that can
+/// hold multiple extensions.
+///
+/// This is analogous to the regular [`Response`] type but designed for the multi-extension API.
+///
+/// # Fields
+///
+/// - `result`: The result code and message from the EPP server
+/// - `message_queue`: Optional message queue information
+/// - `res_data`: The command-specific response data (e.g., domain check results)
+/// - `extensions`: Collection of all extension data from the response
+/// - `tr_ids`: Transaction IDs (client and server)
+///
+/// # Examples
+///
+/// ```no_run
+/// # use instant_epp::{EppClient, Error};
+/// # use instant_epp::domain::DomainCheck;
+/// # use instant_epp::request::ExtensionCollection;
+/// # use instant_epp::extensions::namestore::NameStore;
+/// # async fn example(client: &mut EppClient) -> Result<(), Error> {
+/// let check = DomainCheck { domains: &["example.com"] };
+/// let extensions = ExtensionCollection::with(NameStore { subproduct: "dotCOM" })?;
+///
+/// let response = client.transact_multi(&check, extensions, "txn-001").await?;
+///
+/// // Access main response data
+/// if let Some(data) = response.res_data() {
+///     println!("Check results: {:?}", data);
+/// }
+///
+/// // Access specific extension
+/// if let Some(namestore) = response.extension::<NameStore>()? {
+///     println!("Namestore: {:?}", namestore);
+/// }
+///
+/// // Check result code
+/// println!("Result: {:?}", response.result.code);
+/// # Ok(())
+/// # }
+/// ```
 #[derive(Debug)]
 pub struct ResponseWithExtensions<D> {
     /// Data under the `<result>` tag
@@ -386,16 +701,61 @@ pub struct ResponseWithExtensions<D> {
 
 impl<D> ResponseWithExtensions<D> {
     /// Returns the data under the corresponding `<resData>` from the EPP XML
+    ///
+    /// This is the command-specific response data (e.g., for a domain check, this would
+    /// contain the availability results).
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # use instant_epp::response::ResponseWithExtensions;
+    /// # use instant_epp::domain::DomainCheckResponse;
+    /// # fn example(response: ResponseWithExtensions<DomainCheckResponse>) {
+    /// if let Some(data) = response.res_data() {
+    ///     println!("Command response data: {:?}", data);
+    /// }
+    /// # }
+    /// ```
     pub fn res_data(&self) -> Option<&D> {
         self.res_data.as_ref()
     }
 
     /// Get a specific extension by type
+    ///
+    /// Convenience method that delegates to [`ResponseExtensionCollection::get()`].
+    /// Returns the extension data if present and successfully deserialized.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # use instant_epp::response::ResponseWithExtensions;
+    /// # use instant_epp::extensions::namestore::NameStore;
+    /// # fn example<D>(response: &ResponseWithExtensions<D>) -> Result<(), instant_epp::Error> {
+    /// match response.extension::<NameStore>()? {
+    ///     Some(ns) => println!("Namestore: {:?}", ns),
+    ///     None => println!("No namestore in response"),
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
     pub fn extension<E: ExtensionTrait>(&self) -> Result<Option<E::Response>, crate::Error> {
         self.extensions.get::<E>()
     }
 
     /// Returns the data under the corresponding `<msgQ>` from the EPP XML
+    ///
+    /// Message queue information is present when the server has messages for the client.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # use instant_epp::response::ResponseWithExtensions;
+    /// # fn example<D>(response: &ResponseWithExtensions<D>) {
+    /// if let Some(msg_queue) = response.message_queue() {
+    ///     println!("Messages in queue: {}", msg_queue.count);
+    /// }
+    /// # }
+    /// ```
     pub fn message_queue(&self) -> Option<&MessageQueue> {
         self.message_queue.as_ref()
     }
@@ -403,7 +763,9 @@ impl<D> ResponseWithExtensions<D> {
 
 #[cfg(test)]
 mod tests {
-    use super::{ResponseStatus, ResultCode};
+    use instant_xml::ToXml;
+
+    use super::{ResponseExtensionCollection, ResponseStatus, ResultCode};
     use crate::tests::{get_xml, CLTRID, SVTRID};
     use crate::xml;
 
@@ -420,5 +782,103 @@ mod tests {
         );
         assert_eq!(object.tr_ids.client_tr_id.unwrap(), CLTRID);
         assert_eq!(object.tr_ids.server_tr_id, SVTRID);
+    }
+
+    #[test]
+    fn test_response_extension_collection_empty() {
+        let xml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<epp xmlns="urn:ietf:params:xml:ns:epp-1.0">
+  <response>
+    <result code="1000">
+      <msg>Command completed successfully</msg>
+    </result>
+  </response>
+</epp>"#;
+
+        let collection = ResponseExtensionCollection::from_response_xml(xml).unwrap();
+        assert!(collection.is_empty());
+        assert_eq!(collection.len(), 0);
+        assert_eq!(collection.namespaces().len(), 0);
+    }
+
+    #[test]
+    fn test_response_extension_collection_single() {
+        let xml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<epp xmlns="urn:ietf:params:xml:ns:epp-1.0">
+  <response>
+    <result code="1000">
+      <msg>Command completed successfully</msg>
+    </result>
+    <extension>
+      <namestoreExt:namestoreExt xmlns:namestoreExt="http://www.verisign-grs.com/epp/namestoreExt-1.1">
+        <namestoreExt:subProduct>COM</namestoreExt:subProduct>
+      </namestoreExt:namestoreExt>
+    </extension>
+  </response>
+</epp>"#;
+
+        let collection = ResponseExtensionCollection::from_response_xml(xml).unwrap();
+        assert!(!collection.is_empty());
+        assert_eq!(collection.len(), 1);
+        assert_eq!(collection.namespaces().len(), 1);
+        assert_eq!(
+            collection.namespaces()[0],
+            "http://www.verisign-grs.com/epp/namestoreExt-1.1"
+        );
+    }
+
+    #[test]
+    fn test_response_extension_collection_multiple() {
+        let xml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<epp xmlns="urn:ietf:params:xml:ns:epp-1.0">
+  <response>
+    <result code="1000">
+      <msg>Command completed successfully</msg>
+    </result>
+    <extension>
+      <namestoreExt:namestoreExt xmlns:namestoreExt="http://www.verisign-grs.com/epp/namestoreExt-1.1">
+        <namestoreExt:subProduct>COM</namestoreExt:subProduct>
+      </namestoreExt:namestoreExt>
+      <rgp:upData xmlns:rgp="urn:ietf:params:xml:ns:rgp-1.0">
+        <rgp:rgpStatus s="pendingRestore"/>
+      </rgp:upData>
+    </extension>
+  </response>
+</epp>"#;
+
+        let collection = ResponseExtensionCollection::from_response_xml(xml).unwrap();
+        assert!(!collection.is_empty());
+        assert_eq!(collection.len(), 2);
+        assert_eq!(collection.namespaces().len(), 2);
+
+        let namespaces = collection.namespaces();
+        assert!(namespaces.contains(&"http://www.verisign-grs.com/epp/namestoreExt-1.1"));
+        assert!(namespaces.contains(&"urn:ietf:params:xml:ns:rgp-1.0"));
+    }
+
+    #[test]
+    fn test_response_extension_collection_contains() {
+        let xml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<epp xmlns="urn:ietf:params:xml:ns:epp-1.0">
+  <response>
+    <extension>
+      <namestoreExt:namestoreExt xmlns:namestoreExt="http://www.verisign-grs.com/epp/namestoreExt-1.1">
+        <namestoreExt:subProduct>COM</namestoreExt:subProduct>
+      </namestoreExt:namestoreExt>
+    </extension>
+  </response>
+</epp>"#;
+
+        let collection = ResponseExtensionCollection::from_response_xml(xml).unwrap();
+
+        // Mock extension type for testing
+        #[derive(Debug, ToXml)]
+        struct TestExt;
+        impl crate::request::Extension for TestExt {
+            type Response = String;
+            const XMLNS: &'static str = "http://www.verisign-grs.com/epp/namestoreExt-1.1";
+        }
+
+        assert!(collection.contains::<TestExt>());
     }
 }

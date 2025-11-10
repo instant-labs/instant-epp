@@ -11,7 +11,9 @@ use crate::error::Error;
 use crate::hello::{Greeting, Hello};
 use crate::registry::{ExtensionRegistry, ValidationMode};
 use crate::request::{Command, CommandWrapper, Extension, ExtensionCollection, Transaction};
-use crate::response::{Response, ResponseExtensionCollection, ResponseStatus, ResponseWithExtensions};
+use crate::response::{
+    Response, ResponseExtensionCollection, ResponseStatus, ResponseWithExtensions,
+};
 use crate::xml;
 
 /// An `EppClient` provides an interface to sending EPP requests to a registry
@@ -103,28 +105,65 @@ impl<C: Connector> EppClient<C> {
     /// Create an `EppClient` from an already established connection
     pub async fn new(connector: C, registry: String, timeout: Duration) -> Result<Self, Error> {
         let connection = EppConnection::new(connector, registry, timeout).await?;
-        
+
         // Parse greeting to initialize extension registry
         let greeting = xml::deserialize::<Greeting>(&connection.greeting)?;
         let extension_registry = ExtensionRegistry::from_greeting(&greeting, ValidationMode::Warn);
-        
+
         Ok(Self {
             connection,
             extension_registry,
         })
     }
 
-    /// Get a reference to the extension registry
+    /// Get a reference to the extension registry for this session
     ///
-    /// The registry tracks which extensions are enabled for this session
-    /// and can validate extension usage.
+    /// The extension registry tracks which EPP extensions are enabled for this connection
+    /// and which are supported by the server. Use this to query extension state or check
+    /// capabilities before making requests.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # use instant_epp::EppClient;
+    /// # async fn example(client: &EppClient) {
+    /// let registry = client.extensions();
+    ///
+    /// // Check which extensions are enabled
+    /// let enabled = registry.enabled_extensions();
+    /// println!("Enabled extensions: {:?}", enabled);
+    ///
+    /// // Check if specific extension is supported
+    /// if registry.is_supported("urn:ietf:params:xml:ns:rgp-1.0") {
+    ///     println!("RGP extension is available");
+    /// }
+    /// # }
+    /// ```
     pub fn extensions(&self) -> &ExtensionRegistry {
         &self.extension_registry
     }
 
     /// Get a mutable reference to the extension registry
     ///
-    /// This allows updating the validation mode or manually enabling extensions.
+    /// Use this to modify the extension registry, such as enabling extensions after login
+    /// or changing the validation mode.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # use instant_epp::EppClient;
+    /// # use instant_epp::registry::ValidationMode;
+    /// # async fn example(client: &mut EppClient) {
+    /// // Enable extensions after login
+    /// client.extensions_mut().enable_all(vec![
+    ///     "http://www.verisign-grs.com/epp/namestoreExt-1.1",
+    ///     "urn:ietf:params:xml:ns:rgp-1.0",
+    /// ]);
+    ///
+    /// // Change validation mode
+    /// client.extensions_mut().set_validation_mode(ValidationMode::Strict);
+    /// # }
+    /// ```
     pub fn extensions_mut(&mut self) -> &mut ExtensionRegistry {
         &mut self.extension_registry
     }
@@ -177,10 +216,88 @@ impl<C: Connector> EppClient<C> {
         Err(err)
     }
 
-    /// Transact with multiple extensions
+    /// Execute an EPP command with multiple extensions
     ///
-    /// This method allows sending a command with multiple extensions and returns a response
-    /// that includes all extension data. Extensions are validated against the registry.
+    /// This method enables sending EPP commands with zero or more extensions in a single request.
+    /// It's the recommended way to use extensions as it provides more flexibility than the legacy
+    /// single-extension API.
+    ///
+    /// # Arguments
+    ///
+    /// - `command`: The EPP command to execute (check, create, update, etc.)
+    /// - `extensions`: Collection of extensions to include in the request
+    /// - `id`: Client transaction ID for tracking
+    ///
+    /// # Returns
+    ///
+    /// Returns [`ResponseWithExtensions`] containing:
+    /// - Command response data
+    /// - Extension response data (accessible via type-safe methods)
+    /// - Result codes and transaction IDs
+    ///
+    /// # Errors
+    ///
+    /// - Returns error if any extension is not enabled (when validation is strict)
+    /// - Returns error if command fails (non-1xxx result code)
+    /// - Returns error on network or XML serialization/deserialization failures
+    ///
+    /// # Examples
+    ///
+    /// ## Single Extension
+    /// ```no_run
+    /// # use instant_epp::{EppClient, Error};
+    /// # use instant_epp::domain::DomainCheck;
+    /// # use instant_epp::request::ExtensionCollection;
+    /// # use instant_epp::extensions::namestore::NameStore;
+    /// # async fn example(client: &mut EppClient) -> Result<(), Error> {
+    /// let check = DomainCheck { domains: &["example.com"] };
+    /// let extensions = ExtensionCollection::with(
+    ///     NameStore { subproduct: "dotCOM" }
+    /// )?;
+    ///
+    /// let response = client.transact_multi(&check, extensions, "txn-001").await?;
+    ///
+    /// if let Some(data) = response.res_data() {
+    ///     println!("Domain available: {}", data.list[0].inner.available);
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
+    ///
+    /// ## Multiple Extensions
+    /// ```no_run
+    /// # use instant_epp::{EppClient, Error};
+    /// # use instant_epp::domain::DomainUpdate;
+    /// # use instant_epp::request::ExtensionCollection;
+    /// # use instant_epp::extensions::namestore::NameStore;
+    /// # async fn example(client: &mut EppClient) -> Result<(), Error> {
+    /// # #[derive(Debug)]
+    /// # struct RgpRestore;
+    /// # impl instant_xml::ToXml for RgpRestore {
+    /// #     fn serialize<W: std::fmt::Write + ?Sized>(
+    /// #         &self,
+    /// #         _: Option<instant_xml::Id<'_>>,
+    /// #         _: &mut instant_xml::Serializer<W>,
+    /// #     ) -> Result<(), instant_xml::Error> { Ok(()) }
+    /// # }
+    /// # impl instant_epp::request::Extension for RgpRestore {
+    /// #     type Response = ();
+    /// #     const XMLNS: &'static str = "urn:ietf:params:xml:ns:rgp-1.0";
+    /// # }
+    /// let update = DomainUpdate::new("example.com");
+    /// let extensions = ExtensionCollection::new()
+    ///     .add(NameStore { subproduct: "dotCOM" })?
+    ///     .add(RgpRestore)?;
+    ///
+    /// let response = client.transact_multi(&update, extensions, "txn-002").await?;
+    ///
+    /// // Access individual extensions
+    /// if let Some(ns) = response.extension::<NameStore>()? {
+    ///     println!("Namestore response: {:?}", ns);
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
     pub async fn transact_multi<Cmd>(
         &mut self,
         command: &Cmd,
@@ -194,7 +311,7 @@ impl<C: Connector> EppClient<C> {
         for ext in extensions.extensions() {
             self.extension_registry.validate(ext.xmlns)?;
         }
-        
+
         let document = CommandWrapper::new_multi(command, Some(&extensions), id);
         let xml = xml::serialize(&document)?;
 
@@ -202,8 +319,10 @@ impl<C: Connector> EppClient<C> {
         let response = self.connection.transact(&xml)?.await?;
         debug!("{}: response: {}", self.connection.registry, &response);
 
-        // For now, we'll deserialize to a standard Response and convert to ResponseWithExtensions
-        // TODO: Implement proper multi-extension response parsing in Task 3
+        // Parse extensions from raw XML
+        let extensions = ResponseExtensionCollection::from_response_xml(&response)?;
+
+        // Deserialize the main response structure
         let rsp = match xml::deserialize::<Response<Cmd::Response, NoExtension>>(&response) {
             Ok(rsp) => rsp,
             Err(e) => {
@@ -224,7 +343,7 @@ impl<C: Connector> EppClient<C> {
             result: rsp.result,
             message_queue: rsp.message_queue,
             res_data: rsp.res_data.map(|d| d.into_inner()),
-            extensions: ResponseExtensionCollection::new(), // TODO: Parse actual extensions
+            extensions,
             tr_ids: rsp.tr_ids,
         })
     }

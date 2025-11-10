@@ -1,4 +1,41 @@
 //! Types for EPP requests
+//!
+//! This module defines the core traits and types for constructing EPP command requests.
+//! The main types are:
+//! - [`Command`]: Trait for EPP commands (check, create, update, etc.)
+//! - [`Extension`]: Trait for EPP extensions
+//! - [`ExtensionCollection`]: Container for multiple extensions in a single request
+//! - [`Transaction`]: Trait linking commands to extensions (deprecated)
+//!
+//! # Examples
+//!
+//! ## Single Extension (Legacy)
+//! ```no_run
+//! # use instant_epp::EppClient;
+//! # use instant_epp::domain::DomainCheck;
+//! # use instant_epp::extensions::namestore::NameStore;
+//! # async fn example(client: &mut EppClient) -> Result<(), Box<dyn std::error::Error>> {
+//! let check = DomainCheck { domains: &["example.com"] };
+//! let ext = NameStore { subproduct: "dotCOM" };
+//! let response = client.transact((&check, &ext), "txn-001").await?;
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! ## Multiple Extensions (New)
+//! ```no_run
+//! # use instant_epp::EppClient;
+//! # use instant_epp::domain::DomainCheck;
+//! # use instant_epp::request::ExtensionCollection;
+//! # use instant_epp::extensions::namestore::NameStore;
+//! # async fn example(client: &mut EppClient) -> Result<(), Box<dyn std::error::Error>> {
+//! let check = DomainCheck { domains: &["example.com"] };
+//! let extensions = ExtensionCollection::new()
+//!     .add(NameStore { subproduct: "dotCOM" })?;
+//! let response = client.transact_multi(&check, extensions, "txn-001").await?;
+//! # Ok(())
+//! # }
+//! ```
 
 use std::fmt::Debug;
 
@@ -10,13 +47,72 @@ pub const EPP_VERSION: &str = "1.0";
 pub const EPP_LANG: &str = "en";
 
 /// Trait to set correct value for xml tags when tags are being generated from generic types
+///
+/// **Note**: This trait is maintained for backward compatibility but is no longer required
+/// for the new multi-extension API. Use [`ExtensionCollection`] with
+/// [`EppClient::transact_multi`](crate::client::EppClient::transact_multi) instead.
 pub trait Transaction<Ext: Extension>: Command + Sized {}
 
+/// Trait for EPP commands
+///
+/// Implement this trait for types that represent EPP commands (check, create, update, etc.).
+/// The associated `Response` type defines what data structure the command returns.
+///
+/// # Examples
+///
+/// ```
+/// use instant_xml::{ToXml, FromXml};
+/// use instant_epp::request::Command;
+///
+/// #[derive(Debug, ToXml)]
+/// struct MyCommand;
+///
+/// #[derive(Debug, FromXml)]
+/// struct MyResponse;
+///
+/// impl Command for MyCommand {
+///     type Response = MyResponse;
+///     const COMMAND: &'static str = "myCommand";
+/// }
+/// ```
 pub trait Command: ToXml + Debug {
     type Response: FromXmlOwned + Debug;
     const COMMAND: &'static str;
 }
 
+/// Trait for EPP extensions
+///
+/// Implement this trait for types that represent EPP protocol extensions.
+/// Extensions add additional data to commands and may return additional data in responses.
+///
+/// # Required Associated Items
+///
+/// - `Response`: The type of data returned in the response `<extension>` element
+/// - `XMLNS`: The XML namespace URI that identifies this extension
+/// - `NAME`: Optional human-readable name for debugging/logging
+///
+/// # Examples
+///
+/// ```
+/// use instant_xml::{ToXml, FromXml};
+/// use instant_epp::request::Extension;
+///
+/// #[derive(Debug, ToXml)]
+/// struct MyExtension {
+///     value: String,
+/// }
+///
+/// #[derive(Debug, FromXml)]
+/// struct MyExtensionResponse {
+///     result: String,
+/// }
+///
+/// impl Extension for MyExtension {
+///     type Response = MyExtensionResponse;
+///     const XMLNS: &'static str = "urn:example:xml:ns:myext-1.0";
+///     const NAME: Option<&'static str> = Some("My Extension");
+/// }
+/// ```
 pub trait Extension: ToXml + Debug {
     type Response: FromXmlOwned + Debug;
     /// The XML namespace URI for this extension
@@ -141,16 +237,71 @@ pub(crate) struct SerializedExtension {
 
 /// Collection of extensions for requests
 ///
-/// Allows multiple extensions to be attached to a single EPP command.
-/// Extensions are serialized when added and stored as XML strings.
+/// `ExtensionCollection` allows attaching multiple EPP extensions to a single command request.
+/// This is useful when a registry operation requires multiple extensions (e.g., Verisign
+/// Namestore + RGP).
+///
+/// Extensions are serialized to XML when added to the collection using the builder pattern.
+/// The collection preserves the order in which extensions are added.
+///
+/// # Usage
+///
+/// Use the builder pattern to construct a collection:
+/// 1. Create with [`new()`](Self::new) or [`with()`](Self::with)
+/// 2. Add extensions with [`add()`](Self::add)
+/// 3. Pass to [`EppClient::transact_multi()`](crate::client::EppClient::transact_multi)
 ///
 /// # Examples
 ///
+/// ## Single Extension
 /// ```no_run
-/// use instant_epp::request::ExtensionCollection;
-/// // let ext = ExtensionCollection::new()
-/// //     .add(NameStore::new("com"))
-/// //     .add(RgpRequest::new());
+/// # use instant_epp::request::ExtensionCollection;
+/// # use instant_epp::extensions::namestore::NameStore;
+/// let extensions = ExtensionCollection::with(
+///     NameStore { subproduct: "dotCOM" }
+/// )?;
+/// # Ok::<(), instant_epp::Error>(())
+/// ```
+///
+/// ## Multiple Extensions
+/// ```no_run
+/// # use instant_epp::request::ExtensionCollection;
+/// # use instant_epp::extensions::namestore::NameStore;
+/// # #[derive(Debug)]
+/// # struct RgpRestore;
+/// # impl instant_xml::ToXml for RgpRestore {
+/// #     fn serialize<W: std::fmt::Write + ?Sized>(
+/// #         &self,
+/// #         _: Option<instant_xml::Id<'_>>,
+/// #         _: &mut instant_xml::Serializer<W>,
+/// #     ) -> Result<(), instant_xml::Error> { Ok(()) }
+/// # }
+/// # impl instant_epp::request::Extension for RgpRestore {
+/// #     type Response = ();
+/// #     const XMLNS: &'static str = "urn:ietf:params:xml:ns:rgp-1.0";
+/// # }
+/// let extensions = ExtensionCollection::new()
+///     .add(NameStore { subproduct: "dotCOM" })?
+///     .add(RgpRestore)?;
+///
+/// assert_eq!(extensions.len(), 2);
+/// # Ok::<(), instant_epp::Error>(())
+/// ```
+///
+/// ## With Client
+/// ```no_run
+/// # use instant_epp::{EppClient, Error};
+/// # use instant_epp::domain::DomainUpdate;
+/// # use instant_epp::request::ExtensionCollection;
+/// # use instant_epp::extensions::namestore::NameStore;
+/// # async fn example(client: &mut EppClient) -> Result<(), Error> {
+/// let update = DomainUpdate::new("example.com");
+/// let extensions = ExtensionCollection::new()
+///     .add(NameStore { subproduct: "dotCOM" })?;
+///
+/// let response = client.transact_multi(&update, extensions, "txn-123").await?;
+/// # Ok(())
+/// # }
 /// ```
 #[derive(Debug)]
 pub struct ExtensionCollection {
@@ -159,6 +310,17 @@ pub struct ExtensionCollection {
 
 impl ExtensionCollection {
     /// Create a new empty extension collection
+    ///
+    /// Use this to start building a collection, then add extensions with [`add()`](Self::add).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use instant_epp::request::ExtensionCollection;
+    ///
+    /// let collection = ExtensionCollection::new();
+    /// assert!(collection.is_empty());
+    /// ```
     pub fn new() -> Self {
         Self {
             extensions: Vec::new(),
@@ -167,7 +329,25 @@ impl ExtensionCollection {
 
     /// Add an extension to the collection (builder pattern)
     ///
-    /// The extension is serialized when added. Returns an error if serialization fails.
+    /// The extension is serialized to XML immediately. If serialization fails, returns an error.
+    /// Extensions are stored in the order they are added and will be serialized in that order
+    /// in the request XML.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the extension cannot be serialized to XML.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # use instant_epp::request::ExtensionCollection;
+    /// # use instant_epp::extensions::namestore::NameStore;
+    /// let collection = ExtensionCollection::new()
+    ///     .add(NameStore { subproduct: "dotCOM" })?;
+    ///
+    /// assert_eq!(collection.len(), 1);
+    /// # Ok::<(), instant_epp::Error>(())
+    /// ```
     pub fn add<E: Extension>(mut self, ext: E) -> Result<Self, crate::Error> {
         let xml = xml::serialize(&ext)?;
         self.extensions.push(SerializedExtension {
@@ -179,16 +359,57 @@ impl ExtensionCollection {
     }
 
     /// Create a new collection with a single extension
+    ///
+    /// Convenience method equivalent to `ExtensionCollection::new().add(ext)`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the extension cannot be serialized to XML.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # use instant_epp::request::ExtensionCollection;
+    /// # use instant_epp::extensions::namestore::NameStore;
+    /// let collection = ExtensionCollection::with(
+    ///     NameStore { subproduct: "dotCOM" }
+    /// )?;
+    /// assert_eq!(collection.len(), 1);
+    /// # Ok::<(), instant_epp::Error>(())
+    /// ```
     pub fn with<E: Extension>(ext: E) -> Result<Self, crate::Error> {
         Self::new().add(ext)
     }
 
     /// Check if the collection is empty
+    ///
+    /// Returns `true` if no extensions have been added to the collection.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use instant_epp::request::ExtensionCollection;
+    ///
+    /// let collection = ExtensionCollection::new();
+    /// assert!(collection.is_empty());
+    /// ```
     pub fn is_empty(&self) -> bool {
         self.extensions.is_empty()
     }
 
     /// Get the number of extensions in the collection
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # use instant_epp::request::ExtensionCollection;
+    /// # use instant_epp::common::NoExtension;
+    /// let collection = ExtensionCollection::new()
+    ///     .add(NoExtension)?
+    ///     .add(NoExtension)?;
+    /// assert_eq!(collection.len(), 2);
+    /// # Ok::<(), instant_epp::Error>(())
+    /// ```
     pub fn len(&self) -> usize {
         self.extensions.len()
     }
@@ -202,5 +423,52 @@ impl ExtensionCollection {
 impl Default for ExtensionCollection {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::common::NoExtension;
+
+    #[test]
+    fn test_extension_collection_new() {
+        let collection = ExtensionCollection::new();
+        assert!(collection.is_empty());
+        assert_eq!(collection.len(), 0);
+    }
+
+    #[test]
+    fn test_extension_collection_add() {
+        let collection = ExtensionCollection::new().add(NoExtension).unwrap();
+
+        assert!(!collection.is_empty());
+        assert_eq!(collection.len(), 1);
+    }
+
+    #[test]
+    fn test_extension_collection_with() {
+        let collection = ExtensionCollection::with(NoExtension).unwrap();
+        assert_eq!(collection.len(), 1);
+    }
+
+    #[test]
+    fn test_extension_collection_builder_pattern() {
+        let collection = ExtensionCollection::new()
+            .add(NoExtension)
+            .unwrap()
+            .add(NoExtension)
+            .unwrap();
+
+        assert_eq!(collection.len(), 2);
+    }
+
+    #[test]
+    fn test_extension_collection_extensions() {
+        let collection = ExtensionCollection::new().add(NoExtension).unwrap();
+
+        let extensions = collection.extensions();
+        assert_eq!(extensions.len(), 1);
+        assert_eq!(extensions[0].xmlns, "");
     }
 }

@@ -78,3 +78,131 @@ The output would look like this:
 Domain: eppdev.com, Available: 1
 Domain: eppdev.net, Available: 1
 ```
+
+## Features
+
+### 🎯 Core EPP Operations
+- **Domain operations**: Check, create, renew, transfer, update, delete
+- **Host operations**: Check, create, update, delete
+- **Contact operations**: Check, create, update, delete
+- **Session management**: Hello, login, logout, poll
+
+### ✨ Flexible Extension System
+instant-epp now supports a powerful extension system for EPP protocol extensions:
+
+- **Multiple Extensions**: Combine multiple extensions in a single request without combinator structs
+- **Extension Registry**: Track which extensions are enabled and supported per session
+- **Type-Safe Access**: Generic methods for compile-time safe extension retrieval from responses
+- **Validation Modes**: Configure strict, warn, or no validation for extension usage
+- **Backward Compatible**: Existing single-extension API continues to work unchanged
+
+### 🔧 Production Ready
+- **Async/Await**: Built on Tokio for efficient async I/O
+- **Type Safety**: Strongly-typed request/response patterns with instant-xml
+- **Connection Pooling**: Session-level extension tracking supports connection pooling
+- **Error Handling**: Comprehensive error types with clear messages
+- **Battle Tested**: Used in production at Instant Domains
+
+## Working with Extensions
+
+instant-epp supports EPP extensions through a flexible system that allows combining multiple extensions easily.
+
+### Single Extension (Legacy API - Still Supported)
+
+```rust
+use instant_epp::extensions::namestore::NameStore;
+use std::borrow::Cow;
+
+// Create extension
+let namestore = NameStore { subproduct: Cow::Borrowed("dotCOM") };
+
+// Use with command
+let response = client.transact((&domain_check, &namestore), "txn-id").await?;
+
+// Access extension response
+if let Some(ext_data) = response.extension() {
+    println!("Extension data: {:?}", ext_data);
+}
+```
+
+### Multiple Extensions (New API - Recommended)
+
+```rust
+use instant_epp::request::ExtensionCollection;
+use instant_epp::extensions::namestore::NameStore;
+use instant_epp::extensions::rgp::request::{RgpRestoreRequest, Update as RgpUpdate};
+use std::borrow::Cow;
+
+// Build extension collection
+let extensions = ExtensionCollection::new()
+    .add(NameStore { subproduct: Cow::Borrowed("dotCOM") })?
+    .add(RgpUpdate { data: RgpRestoreRequest::default() })?;
+
+// Use with command
+let response = client.transact_multi(&domain_check, extensions, "txn-id").await?;
+
+// Type-safe access to individual extensions
+if let Some(namestore) = response.extension::<NameStore>()? {
+    println!("Namestore: {:?}", namestore);
+}
+
+if let Some(rgp) = response.extension::<RgpUpdate<RgpRestoreRequest>>()? {
+    println!("RGP: {:?}", rgp);
+}
+```
+
+### Extension Registry
+
+```rust
+// Check server capabilities
+let supported = client.extensions().supported_extensions();
+println!("Server supports: {:?}", supported);
+
+// Enable extensions for session
+client.extensions_mut().enable_all(vec![
+    "http://www.verisign-grs.com/epp/namestoreExt-1.1",
+    "urn:ietf:params:xml:ns:rgp-1.0",
+]);
+
+// Check if enabled
+if client.extensions().is_enabled("urn:ietf:params:xml:ns:rgp-1.0") {
+    // Safe to use RGP extension
+}
+
+// Configure validation
+use instant_epp::registry::ValidationMode;
+client.extensions_mut().set_validation_mode(ValidationMode::Strict);
+```
+
+### Supported Extensions
+
+- **Namestore** (`http://www.verisign-grs.com/epp/namestoreExt-1.1`) - Verisign TLD selection
+- **RGP** (`urn:ietf:params:xml:ns:rgp-1.0`) - Registry Grace Period operations
+- **SecDNS** (`urn:ietf:params:xml:ns:secDNS-1.1`) - DNSSEC management
+- **ConsoliDate** - Verisign consolidation date mapping
+- **Low Balance** - Balance notification
+- **Change Poll** - Change notification polling
+- **AFNIC Extensions** - French registry specific extensions
+
+## Documentation
+
+- **[API Documentation](https://docs.rs/instant-epp)** - Complete API reference
+- **[Migration Guide](MIGRATION_GUIDE.md)** - Guide for upgrading to the new extension API
+- **[Implementation Summary](IMPLEMENTATION_SUMMARY.md)** - Technical architecture details
+- **[Registry Quirks](REGISTRY_QUIRKS.md)** - Known registry-specific behaviors and workarounds
+- **[Examples](examples/)** - Runnable examples demonstrating key features
+
+## Examples
+
+See the [examples](examples/) directory for complete, runnable examples:
+
+- **[single_extension.rs](examples/single_extension.rs)** - Using the legacy single-extension API
+- **[multiple_extensions.rs](examples/multiple_extensions.rs)** - Combining multiple extensions
+- **[extension_validation.rs](examples/extension_validation.rs)** - Validation modes and error handling
+- **[extension_registry.rs](examples/extension_registry.rs)** - Registry management and capabilities
+
+Run examples with:
+```bash
+cargo run --example single_extension
+cargo run --example multiple_extensions
+```
