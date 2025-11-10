@@ -20,6 +20,8 @@ impl Transaction<ChangePollExtension> for Poll {}
 
 impl Extension for ChangePollExtension {
     type Response = ChangePoll;
+    const XMLNS: &'static str = XMLNS;
+    const NAME: Option<&'static str> = Some("ChangePoll");
 }
 
 /// Type for EPP XML `<changePoll>` extension

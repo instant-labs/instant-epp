@@ -61,6 +61,8 @@ impl<'a> NameStore<'a> {
 
 impl Extension for NameStore<'_> {
     type Response = NameStore<'static>;
+    const XMLNS: &'static str = XMLNS;
+    const NAME: Option<&'static str> = Some("Namestore");
 }
 
 #[derive(Debug, FromXml, ToXml)]

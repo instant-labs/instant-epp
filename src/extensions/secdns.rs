@@ -15,6 +15,8 @@ impl<'a> Transaction<CreateData<'a>> for crate::domain::create::DomainCreate<'a>
 
 impl Extension for CreateData<'_> {
     type Response = NoExtension;
+    const XMLNS: &'static str = XMLNS;
+    const NAME: Option<&'static str> = Some("SecDNS");
 }
 
 #[derive(Debug, ToXml)]

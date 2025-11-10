@@ -19,12 +19,16 @@ impl Transaction<Update> for DomainUpdate<'_> {}
 
 impl Extension for Update {
     type Response = NoExtension;
+    const XMLNS: &'static str = XMLNS;
+    const NAME: Option<&'static str> = Some("Consolidate");
 }
 
 impl Transaction<UpdateWithNameStore<'_>> for DomainUpdate<'_> {}
 
 impl Extension for UpdateWithNameStore<'_> {
     type Response = NameStore<'static>;
+    const XMLNS: &'static str = XMLNS;
+    const NAME: Option<&'static str> = Some("ConsolidateWithNameStore");
 }
 
 #[derive(PartialEq, Eq, Debug)]

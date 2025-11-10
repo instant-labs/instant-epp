@@ -39,6 +39,8 @@ impl<'a> RgpRestoreReport<'a> {
 
 impl Extension for Update<RgpRestoreReport<'_>> {
     type Response = NoExtension;
+    const XMLNS: &'static str = XMLNS;
+    const NAME: Option<&'static str> = Some("RGP Report");
 }
 
 #[derive(Debug, ToXml)]

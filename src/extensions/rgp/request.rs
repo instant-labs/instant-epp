@@ -15,6 +15,8 @@ impl<'a> Transaction<Update<RgpRestoreRequest<'a>>> for DomainInfo<'a> {}
 
 impl Extension for Update<RgpRestoreRequest<'_>> {
     type Response = RgpRequestResponse;
+    const XMLNS: &'static str = XMLNS;
+    const NAME: Option<&'static str> = Some("RGP Request");
 }
 
 // Request

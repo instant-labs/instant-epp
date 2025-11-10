@@ -10,6 +10,8 @@ impl<'a> Transaction<Ext<Create<ContactCreate<'a>>>> for crate::contact::create:
 
 impl Extension for Ext<Create<ContactCreate<'_>>> {
     type Response = ();
+    const XMLNS: &'static str = XMLNS;
+    const NAME: Option<&'static str> = Some("FRNIC Contact");
 }
 
 /// For french TLDs, a contact is either an individual (PP) or a legal
