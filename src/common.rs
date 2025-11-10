@@ -31,6 +31,7 @@ impl<'xml> FromXml<'xml> for NoExtension {
 impl Extension for NoExtension {
     type Response = Self;
     const XMLNS: &'static str = "";
+    const NAME: Option<&'static str> = None;
 }
 
 /// The `<option>` type in EPP XML login requests

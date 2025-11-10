@@ -50,6 +50,22 @@ impl<'a, E: Extension, D: Transaction<E>> CommandWrapper<'a, D, E> {
     }
 }
 
+// Specialized constructor for ExtensionCollection
+impl<'a, D: Command> CommandWrapper<'a, D, ExtensionCollection> {
+    pub(crate) fn new_multi(
+        data: &'a D,
+        extensions: Option<&'a ExtensionCollection>,
+        client_tr_id: &'a str,
+    ) -> Self {
+        Self {
+            command: D::COMMAND,
+            data,
+            extension: extensions,
+            client_tr_id: client_tr_id.into(),
+        }
+    }
+}
+
 impl<D: ToXml, E: ToXml> ToXml for CommandWrapper<'_, D, E> {
     fn serialize<W: std::fmt::Write + ?Sized>(
         &self,
@@ -61,6 +77,42 @@ impl<D: ToXml, E: ToXml> ToXml for CommandWrapper<'_, D, E> {
         self.data.serialize(None, serializer)?;
         if let Some(extension) = self.extension {
             Ext { inner: extension }.serialize(None, serializer)?;
+        }
+
+        let id_prefix = serializer.write_start("clTRID", EPP_XMLNS)?;
+        serializer.end_start()?;
+        serializer.write_str(&self.client_tr_id)?;
+        serializer.write_close(id_prefix, "clTRID")?;
+
+        serializer.write_close(prefix, "command")?;
+        Ok(())
+    }
+}
+
+// Specialized implementation for ExtensionCollection
+impl<D: ToXml> ToXml for CommandWrapper<'_, D, ExtensionCollection> {
+    fn serialize<W: std::fmt::Write + ?Sized>(
+        &self,
+        _: Option<instant_xml::Id<'_>>,
+        serializer: &mut instant_xml::Serializer<W>,
+    ) -> Result<(), instant_xml::Error> {
+        let prefix = serializer.write_start("command", EPP_XMLNS)?;
+        serializer.end_start()?;
+        self.data.serialize(None, serializer)?;
+
+        // Serialize extension collection if not empty
+        if let Some(extensions) = self.extension {
+            if !extensions.is_empty() {
+                let ext_prefix = serializer.write_start("extension", EPP_XMLNS)?;
+                serializer.end_start()?;
+
+                // Write each extension's XML directly
+                for ext in extensions.extensions() {
+                    serializer.write_str(&ext.xml)?;
+                }
+
+                serializer.write_close(ext_prefix, "extension")?;
+            }
         }
 
         let id_prefix = serializer.write_start("clTRID", EPP_XMLNS)?;

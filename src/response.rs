@@ -6,6 +6,8 @@ use chrono::{DateTime, Utc};
 use instant_xml::{FromXml, Kind};
 
 use crate::common::EPP_XMLNS;
+use crate::request::Extension as ExtensionTrait;
+use crate::xml;
 
 /// Type corresponding to the `<undef>` tag an EPP response XML
 #[derive(Debug, Eq, FromXml, PartialEq)]
@@ -305,6 +307,98 @@ impl<T, E> Response<T, E> {
 #[xml(rename = "extension", ns(EPP_XMLNS))]
 pub struct Extension<E> {
     pub data: E,
+}
+
+/// Collection of extensions from responses
+///
+/// Stores raw XML elements and provides lazy deserialization on demand.
+/// This allows handling multiple extensions without knowing all types at compile time.
+#[derive(Debug, Default)]
+pub struct ResponseExtensionCollection {
+    /// Stores (namespace, xml_content) tuples
+    elements: Vec<(String, String)>,
+}
+
+impl ResponseExtensionCollection {
+    /// Create a new empty response extension collection
+    pub fn new() -> Self {
+        Self {
+            elements: Vec::new(),
+        }
+    }
+
+    /// Add a raw XML element to the collection
+    pub(crate) fn add_raw(&mut self, namespace: String, xml: String) {
+        self.elements.push((namespace, xml));
+    }
+
+    /// Get an extension by type, deserializing it on demand
+    ///
+    /// Returns `Ok(Some(extension))` if the extension is found and successfully deserialized,
+    /// `Ok(None)` if the extension is not present, or `Err` if deserialization fails.
+    pub fn get<E: ExtensionTrait>(&self) -> Result<Option<E::Response>, crate::Error> {
+        for (ns, xml_content) in &self.elements {
+            if ns == E::XMLNS {
+                let response = xml::deserialize::<E::Response>(xml_content)?;
+                return Ok(Some(response));
+            }
+        }
+        Ok(None)
+    }
+
+    /// Check if an extension of the given type is present
+    pub fn contains<E: ExtensionTrait>(&self) -> bool {
+        self.elements.iter().any(|(ns, _)| ns == E::XMLNS)
+    }
+
+    /// Get a list of all extension namespaces present in the response
+    pub fn namespaces(&self) -> Vec<&str> {
+        self.elements.iter().map(|(ns, _)| ns.as_str()).collect()
+    }
+
+    /// Check if the collection is empty
+    pub fn is_empty(&self) -> bool {
+        self.elements.is_empty()
+    }
+
+    /// Get the number of extensions in the collection
+    pub fn len(&self) -> usize {
+        self.elements.len()
+    }
+}
+
+/// Response with extension collection for multi-extension support
+///
+/// Similar to `Response` but uses `ResponseExtensionCollection` for multiple extensions.
+#[derive(Debug)]
+pub struct ResponseWithExtensions<D> {
+    /// Data under the `<result>` tag
+    pub result: EppResult,
+    /// Data under the `<msgQ>` tag
+    pub message_queue: Option<MessageQueue>,
+    /// Data under the `<resData>` tag
+    pub res_data: Option<D>,
+    /// Extension collection
+    pub extensions: ResponseExtensionCollection,
+    /// Data under the `<trID>` tag
+    pub tr_ids: ResponseTRID,
+}
+
+impl<D> ResponseWithExtensions<D> {
+    /// Returns the data under the corresponding `<resData>` from the EPP XML
+    pub fn res_data(&self) -> Option<&D> {
+        self.res_data.as_ref()
+    }
+
+    /// Get a specific extension by type
+    pub fn extension<E: ExtensionTrait>(&self) -> Result<Option<E::Response>, crate::Error> {
+        self.extensions.get::<E>()
+    }
+
+    /// Returns the data under the corresponding `<msgQ>` from the EPP XML
+    pub fn message_queue(&self) -> Option<&MessageQueue> {
+        self.message_queue.as_ref()
+    }
 }
 
 #[cfg(test)]

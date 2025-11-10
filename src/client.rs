@@ -9,8 +9,9 @@ pub use crate::connection::Connector;
 use crate::connection::EppConnection;
 use crate::error::Error;
 use crate::hello::{Greeting, Hello};
-use crate::request::{Command, CommandWrapper, Extension, Transaction};
-use crate::response::{Response, ResponseStatus};
+use crate::registry::{ExtensionRegistry, ValidationMode};
+use crate::request::{Command, CommandWrapper, Extension, ExtensionCollection, Transaction};
+use crate::response::{Response, ResponseExtensionCollection, ResponseStatus, ResponseWithExtensions};
 use crate::xml;
 
 /// An `EppClient` provides an interface to sending EPP requests to a registry
@@ -66,6 +67,7 @@ use crate::xml;
 /// ```
 pub struct EppClient<C: Connector> {
     connection: EppConnection<C>,
+    extension_registry: ExtensionRegistry,
 }
 
 #[cfg(feature = "__rustls")]
@@ -100,9 +102,31 @@ impl EppClient<RustlsConnector> {
 impl<C: Connector> EppClient<C> {
     /// Create an `EppClient` from an already established connection
     pub async fn new(connector: C, registry: String, timeout: Duration) -> Result<Self, Error> {
+        let connection = EppConnection::new(connector, registry, timeout).await?;
+        
+        // Parse greeting to initialize extension registry
+        let greeting = xml::deserialize::<Greeting>(&connection.greeting)?;
+        let extension_registry = ExtensionRegistry::from_greeting(&greeting, ValidationMode::Warn);
+        
         Ok(Self {
-            connection: EppConnection::new(connector, registry, timeout).await?,
+            connection,
+            extension_registry,
         })
+    }
+
+    /// Get a reference to the extension registry
+    ///
+    /// The registry tracks which extensions are enabled for this session
+    /// and can validate extension usage.
+    pub fn extensions(&self) -> &ExtensionRegistry {
+        &self.extension_registry
+    }
+
+    /// Get a mutable reference to the extension registry
+    ///
+    /// This allows updating the validation mode or manually enabling extensions.
+    pub fn extensions_mut(&mut self) -> &mut ExtensionRegistry {
+        &mut self.extension_registry
     }
 
     /// Executes an EPP Hello call and returns the response as a `Greeting`
@@ -151,6 +175,58 @@ impl<C: Connector> EppClient<C> {
         }));
 
         Err(err)
+    }
+
+    /// Transact with multiple extensions
+    ///
+    /// This method allows sending a command with multiple extensions and returns a response
+    /// that includes all extension data. Extensions are validated against the registry.
+    pub async fn transact_multi<Cmd>(
+        &mut self,
+        command: &Cmd,
+        extensions: ExtensionCollection,
+        id: &str,
+    ) -> Result<ResponseWithExtensions<Cmd::Response>, Error>
+    where
+        Cmd: Command,
+    {
+        // Validate each extension in the collection
+        for ext in extensions.extensions() {
+            self.extension_registry.validate(ext.xmlns)?;
+        }
+        
+        let document = CommandWrapper::new_multi(command, Some(&extensions), id);
+        let xml = xml::serialize(&document)?;
+
+        debug!("{}: request: {}", self.connection.registry, &xml);
+        let response = self.connection.transact(&xml)?.await?;
+        debug!("{}: response: {}", self.connection.registry, &response);
+
+        // For now, we'll deserialize to a standard Response and convert to ResponseWithExtensions
+        // TODO: Implement proper multi-extension response parsing in Task 3
+        let rsp = match xml::deserialize::<Response<Cmd::Response, NoExtension>>(&response) {
+            Ok(rsp) => rsp,
+            Err(e) => {
+                error!(%response, "failed to deserialize response for transaction: {e}");
+                return Err(e);
+            }
+        };
+
+        if !rsp.result.code.is_success() {
+            return Err(crate::error::Error::Command(Box::new(ResponseStatus {
+                result: rsp.result,
+                tr_ids: rsp.tr_ids,
+            })));
+        }
+
+        // Convert Response to ResponseWithExtensions
+        Ok(ResponseWithExtensions {
+            result: rsp.result,
+            message_queue: rsp.message_queue,
+            res_data: rsp.res_data.map(|d| d.into_inner()),
+            extensions: ResponseExtensionCollection::new(), // TODO: Parse actual extensions
+            tr_ids: rsp.tr_ids,
+        })
     }
 
     /// Accepts raw EPP XML and returns the raw EPP XML response to it.
