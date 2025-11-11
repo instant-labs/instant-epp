@@ -331,13 +331,14 @@ pub struct Extension<E> {
 /// # Examples
 ///
 /// ```no_run
-/// # use instant_epp::{EppClient, Error};
+/// # use instant_epp::Error;
 /// # use instant_epp::domain::DomainCheck;
 /// # use instant_epp::request::ExtensionCollection;
-/// # use instant_epp::extensions::namestore::{NameStore, NameStoreData};
-/// # async fn example(client: &mut EppClient) -> Result<(), Error> {
+/// # use instant_epp::extensions::namestore::NameStore;
+/// # async fn example<C>(client: &mut instant_epp::client::EppClient<C>) -> Result<(), Error>
+/// # where C: instant_epp::connection::Connector {
 /// let check = DomainCheck { domains: &["example.com"] };
-/// let extensions = ExtensionCollection::with(NameStore { subproduct: "dotCOM" })?;
+/// let extensions = ExtensionCollection::with(NameStore { subproduct: "dotCOM".into() })?;
 ///
 /// let response = client.transact_multi(&check, extensions, "txn-001").await?;
 ///
@@ -524,6 +525,7 @@ impl ResponseExtensionCollection {
     }
 
     /// Add a raw XML element to the collection
+    #[allow(dead_code)] // Reserved for future testing utilities
     pub(crate) fn add_raw(&mut self, namespace: String, xml: String) {
         self.elements.push((namespace, xml));
     }
@@ -660,13 +662,14 @@ impl ResponseExtensionCollection {
 /// # Examples
 ///
 /// ```no_run
-/// # use instant_epp::{EppClient, Error};
+/// # use instant_epp::Error;
 /// # use instant_epp::domain::DomainCheck;
 /// # use instant_epp::request::ExtensionCollection;
 /// # use instant_epp::extensions::namestore::NameStore;
-/// # async fn example(client: &mut EppClient) -> Result<(), Error> {
+/// # async fn example<C>(client: &mut instant_epp::client::EppClient<C>) -> Result<(), Error>
+/// # where C: instant_epp::connection::Connector {
 /// let check = DomainCheck { domains: &["example.com"] };
-/// let extensions = ExtensionCollection::with(NameStore { subproduct: "dotCOM" })?;
+/// let extensions = ExtensionCollection::with(NameStore { subproduct: "dotCOM".into() })?;
 ///
 /// let response = client.transact_multi(&check, extensions, "txn-001").await?;
 ///
@@ -709,8 +712,7 @@ impl<D> ResponseWithExtensions<D> {
     ///
     /// ```no_run
     /// # use instant_epp::response::ResponseWithExtensions;
-    /// # use instant_epp::domain::DomainCheckResponse;
-    /// # fn example(response: ResponseWithExtensions<DomainCheckResponse>) {
+    /// # fn example<D: std::fmt::Debug>(response: ResponseWithExtensions<D>) {
     /// if let Some(data) = response.res_data() {
     ///     println!("Command response data: {:?}", data);
     /// }

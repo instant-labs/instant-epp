@@ -11,12 +11,13 @@
 //!
 //! ## Single Extension (Legacy)
 //! ```no_run
-//! # use instant_epp::EppClient;
 //! # use instant_epp::domain::DomainCheck;
 //! # use instant_epp::extensions::namestore::NameStore;
-//! # async fn example(client: &mut EppClient) -> Result<(), Box<dyn std::error::Error>> {
+//! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+//! # use instant_epp::client::{EppClient, RustlsConnector};
+//! # let mut client: EppClient<RustlsConnector> = todo!();
 //! let check = DomainCheck { domains: &["example.com"] };
-//! let ext = NameStore { subproduct: "dotCOM" };
+//! let ext = NameStore { subproduct: "dotCOM".into() };
 //! let response = client.transact((&check, &ext), "txn-001").await?;
 //! # Ok(())
 //! # }
@@ -24,14 +25,15 @@
 //!
 //! ## Multiple Extensions (New)
 //! ```no_run
-//! # use instant_epp::EppClient;
 //! # use instant_epp::domain::DomainCheck;
 //! # use instant_epp::request::ExtensionCollection;
 //! # use instant_epp::extensions::namestore::NameStore;
-//! # async fn example(client: &mut EppClient) -> Result<(), Box<dyn std::error::Error>> {
+//! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+//! # use instant_epp::client::{EppClient, RustlsConnector};
+//! # let mut client: EppClient<RustlsConnector> = todo!();
 //! let check = DomainCheck { domains: &["example.com"] };
 //! let extensions = ExtensionCollection::new()
-//!     .add(NameStore { subproduct: "dotCOM" })?;
+//!     .add(NameStore { subproduct: "dotCOM".into() })?;
 //! let response = client.transact_multi(&check, extensions, "txn-001").await?;
 //! # Ok(())
 //! # }
@@ -231,6 +233,7 @@ struct Ext<E> {
 #[derive(Debug)]
 pub(crate) struct SerializedExtension {
     pub(crate) xmlns: &'static str,
+    #[allow(dead_code)] // Used for debugging and future logging
     pub(crate) name: Option<&'static str>,
     pub(crate) xml: String,
 }
@@ -258,7 +261,7 @@ pub(crate) struct SerializedExtension {
 /// # use instant_epp::request::ExtensionCollection;
 /// # use instant_epp::extensions::namestore::NameStore;
 /// let extensions = ExtensionCollection::with(
-///     NameStore { subproduct: "dotCOM" }
+///     NameStore { subproduct: "dotCOM".into() }
 /// )?;
 /// # Ok::<(), instant_epp::Error>(())
 /// ```
@@ -281,7 +284,7 @@ pub(crate) struct SerializedExtension {
 /// #     const XMLNS: &'static str = "urn:ietf:params:xml:ns:rgp-1.0";
 /// # }
 /// let extensions = ExtensionCollection::new()
-///     .add(NameStore { subproduct: "dotCOM" })?
+///     .add(NameStore { subproduct: "dotCOM".into() })?
 ///     .add(RgpRestore)?;
 ///
 /// assert_eq!(extensions.len(), 2);
@@ -290,14 +293,15 @@ pub(crate) struct SerializedExtension {
 ///
 /// ## With Client
 /// ```no_run
-/// # use instant_epp::{EppClient, Error};
+/// # use instant_epp::Error;
 /// # use instant_epp::domain::DomainUpdate;
 /// # use instant_epp::request::ExtensionCollection;
 /// # use instant_epp::extensions::namestore::NameStore;
-/// # async fn example(client: &mut EppClient) -> Result<(), Error> {
+/// # async fn example<C>( client: &mut instant_epp::client::EppClient<C>) -> Result<(), Error>
+/// # where C: instant_epp::connection::Connector {
 /// let update = DomainUpdate::new("example.com");
 /// let extensions = ExtensionCollection::new()
-///     .add(NameStore { subproduct: "dotCOM" })?;
+///     .add(NameStore { subproduct: "dotCOM".into() })?;
 ///
 /// let response = client.transact_multi(&update, extensions, "txn-123").await?;
 /// # Ok(())
@@ -343,11 +347,12 @@ impl ExtensionCollection {
     /// # use instant_epp::request::ExtensionCollection;
     /// # use instant_epp::extensions::namestore::NameStore;
     /// let collection = ExtensionCollection::new()
-    ///     .add(NameStore { subproduct: "dotCOM" })?;
+    ///     .add(NameStore { subproduct: "dotCOM".into() })?;
     ///
     /// assert_eq!(collection.len(), 1);
     /// # Ok::<(), instant_epp::Error>(())
     /// ```
+    #[allow(clippy::should_implement_trait)] // Builder pattern, not std::ops::Add
     pub fn add<E: Extension>(mut self, ext: E) -> Result<Self, crate::Error> {
         let xml = xml::serialize(&ext)?;
         self.extensions.push(SerializedExtension {
@@ -372,7 +377,7 @@ impl ExtensionCollection {
     /// # use instant_epp::request::ExtensionCollection;
     /// # use instant_epp::extensions::namestore::NameStore;
     /// let collection = ExtensionCollection::with(
-    ///     NameStore { subproduct: "dotCOM" }
+    ///     NameStore { subproduct: "dotCOM".into() }
     /// )?;
     /// assert_eq!(collection.len(), 1);
     /// # Ok::<(), instant_epp::Error>(())

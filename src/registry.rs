@@ -218,7 +218,7 @@ impl KnownExtensions {
     /// assert!(KnownExtensions::by_name("Namestore").is_some());
     /// assert!(KnownExtensions::by_name("NAMESTORE").is_some());
     ///
-    /// let ext = KnownExtensions::by_name("rgp").unwrap();
+    /// let ext = KnownExtensions::by_name("Registry Grace Period").unwrap();
     /// assert_eq!(ext.xmlns, "urn:ietf:params:xml:ns:rgp-1.0");
     /// ```
     pub fn by_name(name: &str) -> Option<&'static ExtensionMetadata> {

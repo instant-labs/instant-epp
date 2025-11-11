@@ -126,7 +126,7 @@ impl<C: Connector> EppClient<C> {
     ///
     /// ```no_run
     /// # use instant_epp::EppClient;
-    /// # async fn example(client: &EppClient) {
+    /// # async fn example<C: instant_epp::connection::Connector>(client: &EppClient<C>) {
     /// let registry = client.extensions();
     ///
     /// // Check which extensions are enabled
@@ -153,7 +153,8 @@ impl<C: Connector> EppClient<C> {
     /// ```no_run
     /// # use instant_epp::EppClient;
     /// # use instant_epp::registry::ValidationMode;
-    /// # async fn example(client: &mut EppClient) {
+    /// # async fn example<C>(client: &mut EppClient<C>)
+    /// # where C: instant_epp::connection::Connector {
     /// // Enable extensions after login
     /// client.extensions_mut().enable_all(vec![
     ///     "http://www.verisign-grs.com/epp/namestoreExt-1.1",
@@ -245,14 +246,15 @@ impl<C: Connector> EppClient<C> {
     ///
     /// ## Single Extension
     /// ```no_run
-    /// # use instant_epp::{EppClient, Error};
+    /// # use instant_epp::Error;
     /// # use instant_epp::domain::DomainCheck;
     /// # use instant_epp::request::ExtensionCollection;
     /// # use instant_epp::extensions::namestore::NameStore;
-    /// # async fn example(client: &mut EppClient) -> Result<(), Error> {
+    /// # async fn example<C>(client: &mut instant_epp::client::EppClient<C>) -> Result<(), Error>
+    /// # where C: instant_epp::connection::Connector {
     /// let check = DomainCheck { domains: &["example.com"] };
     /// let extensions = ExtensionCollection::with(
-    ///     NameStore { subproduct: "dotCOM" }
+    ///     NameStore { subproduct: "dotCOM".into() }
     /// )?;
     ///
     /// let response = client.transact_multi(&check, extensions, "txn-001").await?;
@@ -266,11 +268,12 @@ impl<C: Connector> EppClient<C> {
     ///
     /// ## Multiple Extensions
     /// ```no_run
-    /// # use instant_epp::{EppClient, Error};
+    /// # use instant_epp::Error;
     /// # use instant_epp::domain::DomainUpdate;
     /// # use instant_epp::request::ExtensionCollection;
     /// # use instant_epp::extensions::namestore::NameStore;
-    /// # async fn example(client: &mut EppClient) -> Result<(), Error> {
+    /// # async fn example<C>(client: &mut instant_epp::client::EppClient<C>) -> Result<(), Error>
+    /// # where C: instant_epp::connection::Connector {
     /// # #[derive(Debug)]
     /// # struct RgpRestore;
     /// # impl instant_xml::ToXml for RgpRestore {
@@ -286,7 +289,7 @@ impl<C: Connector> EppClient<C> {
     /// # }
     /// let update = DomainUpdate::new("example.com");
     /// let extensions = ExtensionCollection::new()
-    ///     .add(NameStore { subproduct: "dotCOM" })?
+    ///     .add(NameStore { subproduct: "dotCOM".into() })?
     ///     .add(RgpRestore)?;
     ///
     /// let response = client.transact_multi(&update, extensions, "txn-002").await?;
