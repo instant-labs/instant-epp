@@ -1,0 +1,1680 @@
+
+
+
+
+Registration Protocols Extensions (regext)                      G. Brown
+Internet-Draft                                                     ICANN
+Intended status: Standards Track                        2 September 2024
+Expires: 6 March 2025
+
+
+  Extensible Provisioning Protocol (EPP) mapping for DNS Time-To-Live
+                              (TTL) values
+                      draft-ietf-regext-epp-ttl-16
+
+Abstract
+
+   This document describes an extension to the Extensible Provisioning
+   Protocol (EPP) that allows EPP clients to manage the Time-To-Live
+   (TTL) value for domain name delegation records.
+
+About this draft
+
+   This note is to be removed before publishing as an RFC.
+
+   The source for this draft, and an issue tracker, may can be found at
+   https://github.com/gbxyz/epp-ttl-extension.
+
+Status of This Memo
+
+   This Internet-Draft is submitted in full conformance with the
+   provisions of BCP 78 and BCP 79.
+
+   Internet-Drafts are working documents of the Internet Engineering
+   Task Force (IETF).  Note that other groups may also distribute
+   working documents as Internet-Drafts.  The list of current Internet-
+   Drafts is at https://datatracker.ietf.org/drafts/current/.
+
+   Internet-Drafts are draft documents valid for a maximum of six months
+   and may be updated, replaced, or obsoleted by other documents at any
+   time.  It is inappropriate to use Internet-Drafts as reference
+   material or to cite them other than as "work in progress."
+
+   This Internet-Draft will expire on 6 March 2025.
+
+Copyright Notice
+
+   Copyright (c) 2024 IETF Trust and the persons identified as the
+   document authors.  All rights reserved.
+
+   This document is subject to BCP 78 and the IETF Trust's Legal
+   Provisions Relating to IETF Documents (https://trustee.ietf.org/
+   license-info) in effect on the date of publication of this document.
+
+
+
+Brown                     Expires 6 March 2025                  [Page 1]
+
+Internet-Draft             TTL mapping for EPP            September 2024
+
+
+   Please review these documents carefully, as they describe your rights
+   and restrictions with respect to this document.  Code Components
+   extracted from this document must include Revised BSD License text as
+   described in Section 4.e of the Trust Legal Provisions and are
+   provided without warranty as described in the Revised BSD License.
+
+Table of Contents
+
+   1.  Introduction  . . . . . . . . . . . . . . . . . . . . . . . .   3
+     1.1.  Conventions used in this document . . . . . . . . . . . .   4
+     1.2.  Extension elements  . . . . . . . . . . . . . . . . . . .   5
+       1.2.1.  The <ttl:ttl> element . . . . . . . . . . . . . . . .   5
+         1.2.1.1.  Element content . . . . . . . . . . . . . . . . .   5
+         1.2.1.2.  Supported DNS record types  . . . . . . . . . . .   6
+         1.2.1.3.  The <ttl:info> element  . . . . . . . . . . . . .   7
+       1.2.2.  Examples  . . . . . . . . . . . . . . . . . . . . . .   7
+         1.2.2.1.  Explicit TTL value (<create> or <update>
+                 command)  . . . . . . . . . . . . . . . . . . . . .   7
+         1.2.2.2.  Explicit TTL value (<info> policy mode) . . . . .   7
+         1.2.2.3.  Empty value indicating default TTL (<create> or
+                 <update> command, <info> default mode)  . . . . . .   7
+         1.2.2.4.  Custom record type (<create> or <update> command,
+                 <info> default mode)  . . . . . . . . . . . . . . .   7
+   2.  EPP command mapping . . . . . . . . . . . . . . . . . . . . .   8
+     2.1.  EPP query commands  . . . . . . . . . . . . . . . . . . .   8
+       2.1.1.  EPP <info> command  . . . . . . . . . . . . . . . . .   8
+         2.1.1.1.  Default Mode  . . . . . . . . . . . . . . . . . .   8
+         2.1.1.2.  Policy Mode . . . . . . . . . . . . . . . . . . .  11
+     2.2.  EPP transform commands  . . . . . . . . . . . . . . . . .  14
+       2.2.1.  EPP <create> command  . . . . . . . . . . . . . . . .  14
+       2.2.2.  EPP <update> command  . . . . . . . . . . . . . . . .  16
+   3.  Server processing of TTL values . . . . . . . . . . . . . . .  18
+     3.1.  Permitted record types  . . . . . . . . . . . . . . . . .  18
+     3.2.  Use of TTL values in delegation records . . . . . . . . .  18
+   4.  Out-of-band changes to TTL values . . . . . . . . . . . . . .  18
+   5.  Operational considerations  . . . . . . . . . . . . . . . . .  18
+     5.1.  Operational impact of TTL values  . . . . . . . . . . . .  18
+     5.2.  When TTL values should be changed . . . . . . . . . . . .  19
+   6.  Security considerations . . . . . . . . . . . . . . . . . . .  19
+     6.1.  Fast-flux DNS . . . . . . . . . . . . . . . . . . . . . .  19
+     6.2.  Compromised user accounts . . . . . . . . . . . . . . . .  20
+   7.  IANA considerations . . . . . . . . . . . . . . . . . . . . .  20
+     7.1.  XML namespace . . . . . . . . . . . . . . . . . . . . . .  20
+     7.2.  EPP extension registry  . . . . . . . . . . . . . . . . .  20
+   8.  Formal syntax . . . . . . . . . . . . . . . . . . . . . . . .  21
+   9.  Implementation status . . . . . . . . . . . . . . . . . . . .  24
+     9.1.  Verisign EPP SDK  . . . . . . . . . . . . . . . . . . . .  24
+     9.2.  Pepper EPP Client . . . . . . . . . . . . . . . . . . . .  25
+
+
+
+Brown                     Expires 6 March 2025                  [Page 2]
+
+Internet-Draft             TTL mapping for EPP            September 2024
+
+
+   10. Change log  . . . . . . . . . . . . . . . . . . . . . . . . .  25
+     10.1.  Changes from 15 to 16  . . . . . . . . . . . . . . . . .  25
+     10.2.  Changes from 14 to 15  . . . . . . . . . . . . . . . . .  25
+     10.3.  Changes from 13 to 14  . . . . . . . . . . . . . . . . .  25
+     10.4.  Changes from 12 to 13  . . . . . . . . . . . . . . . . .  26
+     10.5.  Changes from 11 to 12  . . . . . . . . . . . . . . . . .  26
+     10.6.  Changes from 10 to 11  . . . . . . . . . . . . . . . . .  26
+     10.7.  Changes from 09 to 10  . . . . . . . . . . . . . . . . .  26
+     10.8.  Changes from 08 to 09  . . . . . . . . . . . . . . . . .  26
+     10.9.  Changes from 07 to 08  . . . . . . . . . . . . . . . . .  26
+     10.10. Changes from 06 to 07  . . . . . . . . . . . . . . . . .  26
+     10.11. Changes from 05 to 06  . . . . . . . . . . . . . . . . .  26
+     10.12. Changes from 04 to 05  . . . . . . . . . . . . . . . . .  26
+     10.13. Changes from 04 to 05  . . . . . . . . . . . . . . . . .  27
+     10.14. Changes from 03 to 04  . . . . . . . . . . . . . . . . .  27
+     10.15. Changes from 02 to 03  . . . . . . . . . . . . . . . . .  27
+     10.16. Changes from 01 to 02  . . . . . . . . . . . . . . . . .  27
+     10.17. Changes from 00 to 01  . . . . . . . . . . . . . . . . .  27
+   11. Acknowledgements  . . . . . . . . . . . . . . . . . . . . . .  28
+   12. References  . . . . . . . . . . . . . . . . . . . . . . . . .  28
+     12.1.  Normative references . . . . . . . . . . . . . . . . . .  28
+     12.2.  Informative references . . . . . . . . . . . . . . . . .  29
+   Author's Address  . . . . . . . . . . . . . . . . . . . . . . . .  30
+
+1.  Introduction
+
+   The principal output of any domain name registry system is a DNS zone
+   file, which contains the delegation record(s) for names registered
+   within a zone (such as a top-level domain).  These records typically
+   include one or more NS records, but may also include DS records for
+   domains secured with DNSSEC ([RFC9364]), and DNAME records for IDN
+   variants ([RFC6927]).  A and/or AAAA records may also be published
+   for nameservers where required by DNS resolvers to avoid an infinite
+   loop.
+
+   Typically, the Time-To-Live value (TTL, see Section 5 of [RFC9499])
+   of these records is determined by the registry operator.  However, in
+   some circumstances it may be desirable to allow the sponsoring client
+   of a domain name to change the TTL values used for that domain's
+   delegation: for example, to reduce the amount of time required to
+   complete a change of DNS servers, DNSSEC deployment or key rollover,
+   or to allow for fast rollback of such changes.
+
+
+
+
+
+
+
+
+
+Brown                     Expires 6 March 2025                  [Page 3]
+
+Internet-Draft             TTL mapping for EPP            September 2024
+
+
+   This document describes an EPP extension to the domain name and host
+   object mappings (described in [RFC5731] and [RFC5732], respectively)
+   which allows the sponsor of a domain name or host object to change
+   the TTL values of the resource record(s) associated with that object.
+   It also describes how EPP servers should handle TTLs specified by EPP
+   clients and how both parties co-ordinate to manage TTL values in
+   response to changes in operational or security requirements.
+
+1.1.  Conventions used in this document
+
+   The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT",
+   "SHOULD", "SHOULD NOT", "RECOMMENDED", "NOT RECOMMENDED", "MAY", and
+   "OPTIONAL" in this document are to be interpreted as described in BCP
+   14 [RFC2119] [RFC8174] when, and only when, they appear in all
+   capitals, as shown here.
+
+   In examples, "C:" represents lines sent by a protocol client and "S:"
+   represents lines returned by a protocol server.  Indentation and
+   white space in examples are provided only to illustrate element
+   relationships and are not required features of this protocol.
+
+   A protocol client that is authorized to manage an existing object is
+   described as a "sponsoring" client throughout this document.
+
+   XML is case sensitive.  Unless stated otherwise, XML specifications
+   and examples provided in this document MUST be interpreted in the
+   character case presented in order to develop a conforming
+   implementation.
+
+   EPP uses XML namespaces to provide an extensible object management
+   framework and to identify schemas required for XML instance parsing
+   and validation.  These namespaces and schema definitions are used to
+   identify both the base protocol schema and the schemas for managed
+   objects.
+
+   The XML namespace prefixes used in examples (such as the string ttl
+   in ttl:create) are solely for illustrative purposes.  A conforming
+   implementation MUST NOT require the use of these or any other
+   specific namespace prefixes.
+
+   In accordance with Section 3.2.2.1 of XML Schema Part 2: Datatypes
+   [XSD-DATATYPES], the allowable lexical representations for the
+   xs:boolean datatype are the strings "0" and "false" for the concept
+   'false' and the strings "1" and "true" for the concept 'true'.
+   Implementations MUST support both styles of lexical representation.
+
+
+
+
+
+
+Brown                     Expires 6 March 2025                  [Page 4]
+
+Internet-Draft             TTL mapping for EPP            September 2024
+
+
+1.2.  Extension elements
+
+   This extension adds additional elements to the EPP domain and host
+   mappings.
+
+1.2.1.  The <ttl:ttl> element
+
+   The <ttl:ttl> element is used to define TTL values for the DNS
+   resource records associated with domain and host objects.
+
+   <ttl:ttl> elements may have the following attributes, depending on
+   whether it appears in a command or response frame:
+
+   1.  "for", which is REQUIRED in both commands and responses, and
+       which specifies the DNS record type to which the TTL value
+       pertains.  This attribute MUST have one of the following values:
+       "NS", "DS", "DNAME", "A", "AAAA" or "custom";
+
+   2.  If the value of the "for" attribute is "custom", then the
+       <ttl:ttl> element MUST also have a "custom" attribute containing
+       a DNS record type conforming with the regular expression in
+       Section 3.1 of [RFC6895].  Additionally, the record type MUST be
+       registered with IANA.
+
+   3.  "min", which MUST NOT be present in command frames but MAY be
+       present in response frames (see Section 2.1.1), and which is used
+       by the server to indicate the lowest value that may be set;
+
+   4.  "default", which MUST NOT be present in command frames but MAY be
+       present in response frames (see Section 2.1.1), and which is used
+       by the server to indicate the default value;
+
+   5.  "max", which MUST NOT be present in command frames but MAY be
+       present in response frames (see Section 2.1.1), and which is used
+       by the server to indicate the highest value that may be set;
+
+   When present, the value of the "min" attribute MUST be lower than the
+   value of the "max" attribute.  The "default" attribute MUST be
+   between the "min" and "max" values, inclusively.
+
+1.2.1.1.  Element content
+
+   The XML schema found in Section 8 of this document restricts the
+   content of <ttl:ttl> elements to be either:
+
+   1.  a non-negative integer, indicating the value of the TTL in
+       seconds, or
+
+
+
+
+Brown                     Expires 6 March 2025                  [Page 5]
+
+Internet-Draft             TTL mapping for EPP            September 2024
+
+
+   2.  empty, in which case the server's default TTL for the given
+       record type is to be applied.
+
+1.2.1.2.  Supported DNS record types
+
+   To facilitate forward compatibility with future changes to the DNS
+   protocol, this document does not enumerate or restrict the DNS record
+   types that can be included in the "custom" attribute of the <ttl:ttl>
+   element.
+
+   The regular expression which is used to validate the values of the
+   "custom" attribute is based on the expression found in Section 3.1 of
+   [RFC6895], and is intended to match both existing and future RRTYPE
+   mnemonics.  This eliminates the need to update this document in the
+   event that new DNS records that exist above a zone cut (Section 7 of
+   [RFC9499]) are specified.
+
+   Nevertheless, EPP servers which implement this extension MUST
+   restrict the DNS record types that are accepted in <create> and
+   <update> commands, and included in <info> responses, allowing only
+   those types that are actually published in the DNS for domain and
+   host objects.
+
+   A server that receives a <create> or <update> command that attempts
+   to set TTL values for inapplicable DNS record types MUST respond with
+   a 2306 "Parameter value policy" error.
+
+   As an illustrative example, a server MAY allow clients to specify TTL
+   values for the following record types for domain objects:
+
+   1.  NS;
+
+   2.  DS (if the server also implements [RFC5910]);
+
+   3.  DNAME (if the server implements IDN variants using DNAME
+       records).
+
+1.2.1.2.1.  Glue records
+
+   Glue records are described in Section 7 of [RFC9499].
+
+   Servers which implement host objects ([RFC5732]) MAY allow clients to
+   specify TTL values for A and AAAA records for host objects.
+
+   A server supporting host objects which receives a command that
+   attempts to set TTL values for A and AAAA records on a domain object
+   MUST respond with a 2306 "Parameter value policy" error.
+
+
+
+
+Brown                     Expires 6 March 2025                  [Page 6]
+
+Internet-Draft             TTL mapping for EPP            September 2024
+
+
+   EPP servers which use the "host attribute" model (described in
+   Section 1.1 of [RFC5731]) MAY allow clients to specify TTL values for
+   A and AAAA records for domain objects.
+
+1.2.1.3.  The <ttl:info> element
+
+   The <ttl:info> element is used by clients to request that the server
+   include additional information in <info> responses for domain and
+   host objects.
+
+   It has a single OPTIONAL policy attribute, which takes a boolean
+   value with a default value of false.
+
+   The semantics of this element are described in Section 2.1.1.
+
+1.2.1.3.1.  Example
+
+   <ttl:info policy="true"/>
+
+1.2.2.  Examples
+
+1.2.2.1.  Explicit TTL value (<create> or <update> command)
+
+   <ttl:ttl for="NS">3600<ttl:ttl>
+
+1.2.2.2.  Explicit TTL value (<info> policy mode)
+
+   <ttl:ttl
+     for="NS"
+     min="60"
+     default="86400"
+     max="172800">3600<ttl:ttl>
+
+1.2.2.3.  Empty value indicating default TTL (<create> or <update>
+          command, <info> default mode)
+
+   <ttl:ttl for="NS"/>
+
+1.2.2.4.  Custom record type (<create> or <update> command, <info>
+          default mode)
+
+   <ttl:ttl
+     for="custom"
+     custom="NEWRRTYPE">3600<ttl:ttl>
+
+
+
+
+
+
+
+Brown                     Expires 6 March 2025                  [Page 7]
+
+Internet-Draft             TTL mapping for EPP            September 2024
+
+
+2.  EPP command mapping
+
+2.1.  EPP query commands
+
+2.1.1.  EPP <info> command
+
+   This extension defines an additional element for EPP <info> commands
+   and responses for domain and host objects.
+
+   The EPP <info> command is extended to support two different modes:
+
+   1.  The Default Mode (Section 2.1.1.1), which requests the inclusion
+       of all non-default TTL values in the response; and
+
+   2.  The Policy Mode (Section 2.1.1.2), which requests the inclusion
+       of TTL information for all supported DNS record types in the
+       response, along with the minimum, default and maximum values for
+       those records.
+
+2.1.1.1.  Default Mode
+
+   If a server receives an <info> command for a domain or host object
+   which includes a <ttl:info> element with a "policy" attribute that is
+   "0" or "false", then the EPP response MUST contain <ttl:ttl> records
+   for all DNS record types that have non-default TTL values.  These
+   elements MUST NOT have the "min", "default" and "max" attributes.
+
+   Example domain <info> command with a <ttl:info> element with a policy
+   attribute that is false:
+
+   C:<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+   C:<epp xmlns="urn:ietf:params:xml:ns:epp-1.0">
+   C:  <command>
+   C:    <info>
+   C:      <domain:info
+   C:       xmlns:domain="urn:ietf:params:xml:ns:domain-1.0">
+   C:        <domain:name>example.com</domain:name>
+   C:      </domain:info>
+   C:    </info>
+   C:    <extension>
+   C:      <ttl:info
+   C:        xmlns:ttl="urn:ietf:params:xml:ns:epp:ttl-1.0"
+   C:        policy="false"/>
+   C:    </extension>
+   C:  </command>
+   C:</epp>
+
+
+
+
+
+Brown                     Expires 6 March 2025                  [Page 8]
+
+Internet-Draft             TTL mapping for EPP            September 2024
+
+
+   Example domain <info> response to a command with a <ttl:info> element
+   with a policy attribute that is false:
+
+   S:<?xml version="1.0" encoding="utf-8" standalone="no"?>
+   S:<epp xmlns="urn:ietf:params:xml:ns:epp-1.0">
+   S:  <response>
+   S:    <result code="1000">
+   S:      <msg>Command completed successfully</msg>
+   S:    </result>
+   S:    <resData>
+   S:      <domain:infData
+   S:        xmlns:domain="urn:ietf:params:xml:ns:domain-1.0">
+   S:        <domain:name>example.com</domain:name>
+   S:        <domain:roid>EXAMPLE1-REP</domain:roid>
+   S:        <domain:status s="ok"/>
+   S:        <domain:ns>
+   S:          <domain:hostObj>ns1.example.com</domain:hostObj>
+   S:          <domain:hostObj>ns1.example.net</domain:hostObj>
+   S:        </domain:ns>
+   S:        <domain:clID>ClientX</domain:clID>
+   S:        <domain:crID>ClientX</domain:crID>
+   S:        <domain:crDate>2023-11-08T10:14:55.0Z</domain:crDate>
+   S:        <domain:exDate>2024-11-08T10:14:55.0Z</domain:exDate>
+   S:      </domain:infData>
+   S:    </resData>
+   S:    <extension>
+   S:      <ttl:infData
+   S:        xmlns:ttl="urn:ietf:params:xml:ns:epp:ttl-1.0">
+   S:        <ttl:ttl for="NS">172800</ttl:ttl>
+   S:        <ttl:ttl for="DS">300</ttl:ttl>
+   S:      </ttl:infData>
+   S:      <secDNS:infData
+   S:        xmlns:secDNS="urn:ietf:params:xml:ns:secDNS-1.1">
+   S:        <secDNS:dsData>
+   S:          <secDNS:keyTag>12345</secDNS:keyTag>
+   S:          <secDNS:alg>13</secDNS:alg>
+   S:          <secDNS:digestType>2</secDNS:digestType>
+   S:          <secDNS:digest>49FD46E6C4B45C55D4AC</secDNS:digest>
+   S:        </secDNS:dsData>
+   S:      </secDNS:infData>
+   S:    </extension>
+   S:    <trID>
+   S:      <clTRID>ABC-12345</clTRID>
+   S:      <svTRID>54322-XYZ</svTRID>
+   S:    </trID>
+   S:  </response>
+   S:</epp>
+
+
+
+
+Brown                     Expires 6 March 2025                  [Page 9]
+
+Internet-Draft             TTL mapping for EPP            September 2024
+
+
+   Example host <info> command with a <ttl:info> element with a policy
+   attribute that is false:
+
+   C:<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+   C:<epp xmlns="urn:ietf:params:xml:ns:epp-1.0">
+   C:  <command>
+   C:    <info>
+   C:      <host:info
+   C:       xmlns:host="urn:ietf:params:xml:ns:host-1.0">
+   C:        <host:name>ns1.example.com</host:name>
+   C:      </host:info>
+   C:    </info>
+   C:    <extension>
+   C:      <ttl:info
+   C:        xmlns:ttl="urn:ietf:params:xml:ns:epp:ttl-1.0"
+   C:        policy="false"/>
+   C:    </extension>
+   C:  </command>
+   C:</epp>
+
+   Example host <info> response to a command with a <ttl:info> element
+   with a policy attribute that is false:
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Brown                     Expires 6 March 2025                 [Page 10]
+
+Internet-Draft             TTL mapping for EPP            September 2024
+
+
+   S:<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+   S:<epp xmlns="urn:ietf:params:xml:ns:epp-1.0">
+   S:  <response>
+   S:    <result code="1000">
+   S:      <msg>Command completed successfully</msg>
+   S:    </result>
+   S:    <resData>
+   S:      <host:infData
+   S:        xmlns:host="urn:ietf:params:xml:ns:host-1.0">
+   S:        <host:name>ns1.example.com</host:name>
+   S:        <host:roid>NS1_EXAMPLE1-REP</host:roid>
+   S:        <host:status s="ok"/>
+   S:        <host:addr ip="v4">192.0.2.2</host:addr>
+   S:        <host:addr ip="v6">2001:DB8::8:800:200C:417A</host:addr>
+   S:        <host:clID>ClientX</host:clID>
+   S:        <host:crID>ClientX</host:crID>
+   S:        <host:crDate>2023-11-08T10:14:55.0Z</host:crDate>
+   S:      </host:infData>
+   S:    </resData>
+   S:    <extension>
+   S:      <ttl:infData
+   S:        xmlns:ttl="urn:ietf:params:xml:ns:epp:ttl-1.0">
+   S:        <ttl:ttl for="A">172800</ttl:ttl>
+   S:        <ttl:ttl for="AAAA">86400</ttl:ttl>
+   S:      </ttl:infData>
+   S:    </extension>
+   S:    <trID>
+   S:      <clTRID>ABC-12345</clTRID>
+   S:      <svTRID>54322-XYZ</svTRID>
+   S:    </trID>
+   S:  </response>
+   S:</epp>
+
+2.1.1.2.  Policy Mode
+
+   If a server receives an <info> command for a domain or host object
+   which includes a <ttl:info> element with a "policy" attribute is "1"
+   or "true", then the EPP response MUST contain <ttl:ttl> records for
+   all supported DNS record types, irrespective of whether those record
+   types are actually in use by the object in question.  These elements
+   MUST have the "min", "default" and "max" attributes.
+
+   Example domain <info> command requesting the server policies:
+
+
+
+
+
+
+
+
+Brown                     Expires 6 March 2025                 [Page 11]
+
+Internet-Draft             TTL mapping for EPP            September 2024
+
+
+   C:<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+   C:<epp xmlns="urn:ietf:params:xml:ns:epp-1.0">
+   C:  <command>
+   C:    <info>
+   C:      <domain:info
+   C:       xmlns:domain="urn:ietf:params:xml:ns:domain-1.0">
+   C:        <domain:name>example.com</domain:name>
+   C:      </domain:info>
+   C:    </info>
+   C:    <extension>
+   C:      <ttl:info
+   C:        xmlns:ttl="urn:ietf:params:xml:ns:epp:ttl-1.0"
+   C:        policy="true"/>
+   C:    </extension>
+   C:  </command>
+   C:</epp>
+
+   Example domain <info> response providing the server policies:
+
+   <?xml version="1.0" encoding="utf-8" standalone="no"?>
+   <epp xmlns="urn:ietf:params:xml:ns:epp-1.0">
+     <response>
+       <result code="1000">
+         <msg>Command completed successfully</msg>
+       </result>
+       <resData>
+         <domain:infData
+           xmlns:domain="urn:ietf:params:xml:ns:domain-1.0">
+           <domain:name>example.com</domain:name>
+           <domain:roid>EXAMPLE1-REP</domain:roid>
+           <domain:status s="ok"/>
+           <domain:ns>
+             <domain:hostObj>ns1.example.com</domain:hostObj>
+             <domain:hostObj>ns1.example.net</domain:hostObj>
+           </domain:ns>
+           <domain:clID>ClientX</domain:clID>
+           <domain:crID>ClientX</domain:crID>
+           <domain:crDate>2023-11-08T10:14:55.0Z</domain:crDate>
+           <domain:exDate>2024-11-08T10:14:55.0Z</domain:exDate>
+         </domain:infData>
+       </resData>
+       <extension>
+         <ttl:infData
+           xmlns:ttl="urn:ietf:params:xml:ns:epp:ttl-1.0">
+           <ttl:ttl for="NS"
+             min="3600"
+             default="86400"
+             max="172800">172800</ttl:ttl>
+
+
+
+Brown                     Expires 6 March 2025                 [Page 12]
+
+Internet-Draft             TTL mapping for EPP            September 2024
+
+
+           <ttl:ttl for="DS"
+             min="60"
+             default="86400"
+             max="172800">300</ttl:ttl>
+         </ttl:infData>
+         <secDNS:infData
+           xmlns:secDNS="urn:ietf:params:xml:ns:secDNS-1.1">
+           <secDNS:dsData>
+             <secDNS:keyTag>12345</secDNS:keyTag>
+             <secDNS:alg>13</secDNS:alg>
+             <secDNS:digestType>2</secDNS:digestType>
+             <secDNS:digest>49FD46E6C4B45C55D4AC</secDNS:digest>
+           </secDNS:dsData>
+         </secDNS:infData>
+       </extension>
+       <trID>
+         <clTRID>ABC-12345</clTRID>
+         <svTRID>54322-XYZ</svTRID>
+       </trID>
+     </response>
+   </epp>
+
+   Example host <info> command requesting the server policies:
+
+   C:<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+   C:<epp xmlns="urn:ietf:params:xml:ns:epp-1.0">
+   C:  <command>
+   C:    <info>
+   C:      <host:info
+   C:       xmlns:host="urn:ietf:params:xml:ns:host-1.0">
+   C:        <host:name>ns1.example.com</host:name>
+   C:      </host:info>
+   C:    </info>
+   C:    <extension>
+   C:      <ttl:info
+   C:        xmlns:ttl="urn:ietf:params:xml:ns:epp:ttl-1.0"
+   C:        policy="true"/>
+   C:    </extension>
+   C:  </command>
+   C:</epp>
+
+   Example host <info> response providing the server policies:
+
+
+
+
+
+
+
+
+
+Brown                     Expires 6 March 2025                 [Page 13]
+
+Internet-Draft             TTL mapping for EPP            September 2024
+
+
+   S:<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+   S:<epp xmlns="urn:ietf:params:xml:ns:epp-1.0">
+   S:  <response>
+   S:    <result code="1000">
+   S:      <msg>Command completed successfully</msg>
+   S:    </result>
+   S:    <resData>
+   S:      <host:infData
+   S:        xmlns:host="urn:ietf:params:xml:ns:host-1.0">
+   S:        <host:name>ns1.example.com</host:name>
+   S:        <host:roid>NS1_EXAMPLE1-REP</host:roid>
+   S:        <host:status s="ok"/>
+   S:        <host:addr ip="v4">192.0.2.2</host:addr>
+   S:        <host:addr ip="v6">2001:DB8::8:800:200C:417A</host:addr>
+   S:        <host:clID>ClientX</host:clID>
+   S:        <host:crID>ClientX</host:crID>
+   S:        <host:crDate>2023-11-08T10:14:55.0Z</host:crDate>
+   S:      </host:infData>
+   S:    </resData>
+   S:    <extension>
+   S:      <ttl:infData
+   S:        xmlns:ttl="urn:ietf:params:xml:ns:epp:ttl-1.0">
+   S:        <ttl:ttl for="A"
+   S:          min="3600"
+   S:          default="86400"
+   S:          max="172800">172800</ttl:ttl>
+   S:        <ttl:ttl for="AAAA"
+   S:          min="3600"
+   S:          default="86400"
+   S:          max="172800">86400</ttl:ttl>
+   S:      </ttl:infData>
+   S:    </extension>
+   S:    <trID>
+   S:      <clTRID>ABC-12345</clTRID>
+   S:      <svTRID>54322-XYZ</svTRID>
+   S:    </trID>
+   S:  </response>
+   S:</epp>
+
+2.2.  EPP transform commands
+
+2.2.1.  EPP <create> command
+
+   This extension defines an additional element for EPP <create>
+   commands for domain and host objects.
+
+
+
+
+
+
+Brown                     Expires 6 March 2025                 [Page 14]
+
+Internet-Draft             TTL mapping for EPP            September 2024
+
+
+   The <command> element of the <create> command frame MAY contain an
+   <extension> element which MAY contain a <ttl:create> element.  This
+   element MUST contain one or more <ttl:ttl> records as described in
+   Section 1.2.
+
+   Example domain <create> command:
+
+   C:<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+   C:<epp xmlns="urn:ietf:params:xml:ns:epp-1.0">
+   C:  <command>
+   C:    <create>
+   C:      <domain:create
+   C:        xmlns:domain="urn:ietf:params:xml:ns:domain-1.0">
+   C:        <domain:name>example.com</domain:name>
+   C:        <domain:period unit="y">1</domain:period>
+   C:        <domain:ns>
+   C:          <domain:hostObj>ns1.example.com</domain:hostObj>
+   C:          <domain:hostObj>ns1.example.net</domain:hostObj>
+   C:        </domain:ns>
+   C:        <domain:authInfo>
+   C:          <domain:pw/>
+   C:        </domain:authInfo>
+   C:      </domain:create>
+   C:    </create>
+   C:    <extension>
+   C:      <ttl:create
+   C:        xmlns:ttl="urn:ietf:params:xml:ns:epp:ttl-1.0">
+   C:        <ttl:ttl for="NS">172800</ttl:ttl>
+   C:        <ttl:ttl for="DS">300</ttl:ttl>
+   C:      </ttl:create>
+   C:      <secDNS:create
+   C:        xmlns:secDNS="urn:ietf:params:xml:ns:secDNS-1.1">
+   C:        <secDNS:dsData>
+   C:          <secDNS:keyTag>12345</secDNS:keyTag>
+   C:          <secDNS:alg>13</secDNS:alg>
+   C:          <secDNS:digestType>2</secDNS:digestType>
+   C:          <secDNS:digest>49FD46E6C4B45C55D4AC</secDNS:digest>
+   C:        </secDNS:dsData>
+   C:      </secDNS:create>
+   C:    </extension>
+   C:    <clTRID>ABC-12345</clTRID>
+   C:  </command>
+   C:</epp>
+
+   Example host <create> command:
+
+
+
+
+
+
+Brown                     Expires 6 March 2025                 [Page 15]
+
+Internet-Draft             TTL mapping for EPP            September 2024
+
+
+   C:<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+   C:<epp xmlns="urn:ietf:params:xml:ns:epp-1.0">
+   C:  <command>
+   C:    <create>
+   C:      <host:create
+   C:        xmlns:host="urn:ietf:params:xml:ns:host-1.0">
+   C:        <host:name>ns1.example.com</host:name>
+   C:        <host:addr ip="v4">192.0.2.2</host:addr>
+   C:        <host:addr ip="v6">2001:DB8::8:800:200C:417A</host:addr>
+   C:      </host:create>
+   C:    </create>
+   C:    <extension>
+   C:      <ttl:create
+   C:        xmlns:ttl="urn:ietf:params:xml:ns:epp:ttl-1.0">
+   C:        <ttl:ttl for="A"/>
+   C:        <ttl:ttl for="AAAA">86400</ttl:ttl>
+   C:      </ttl:create>
+   C:    </extension>
+   C:    <clTRID>ABC-12345</clTRID>
+   C:  </command>
+   C:</epp>
+
+   If an EPP server receives a <create> command containing a TTL value
+   that is outside the server's permitted range, it MUST reject the
+   command with a 2004 "Parameter value range error" response.
+
+2.2.2.  EPP <update> command
+
+   This extension defines an additional element for EPP <update>
+   commands for domain and host objects.
+
+   The <command> element of the <update> command frame MAY contain an
+   <extension> element which MAY contain a <ttl:update> element.  This
+   element MUST contain one or more <ttl:ttl> records as described in
+   Section 1.2.
+
+   Example domain <update> command:
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Brown                     Expires 6 March 2025                 [Page 16]
+
+Internet-Draft             TTL mapping for EPP            September 2024
+
+
+   C:<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+   C:<epp xmlns="urn:ietf:params:xml:ns:epp-1.0">
+   C:  <command>
+   C:    <update>
+   C:      <domain:update
+   C:        xmlns:domain="urn:ietf:params:xml:ns:domain-1.0">
+   C:        <domain:name>example.com</domain:name>
+   C:      </domain:update>
+   C:    </update>
+   C:    <extension>
+   C:      <ttl:update
+   C:        xmlns:ttl="urn:ietf:params:xml:ns:epp:ttl-1.0">
+   C:        <ttl:ttl for="NS"/>
+   C:        <ttl:ttl for="custom"
+   C:          custom="DELEG"/>
+   C:        <ttl:ttl for="DS">86400</ttl:ttl>
+   C:      </ttl:update>
+   C:    </extension>
+   C:    <clTRID>ABC-12345</clTRID>
+   C:  </command>
+   C:</epp>
+
+   Example host <update> command:
+
+   C:<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+   C:<epp xmlns="urn:ietf:params:xml:ns:epp-1.0">
+   C:  <command>
+   C:    <update>
+   C:      <host:update
+   C:        xmlns:host="urn:ietf:params:xml:ns:host-1.0">
+   C:        <host:name>ns1.example.com</host:name>
+   C:      </host:update>
+   C:    </update>
+   C:    <extension>
+   C:      <ttl:update
+   C:        xmlns:ttl="urn:ietf:params:xml:ns:epp:ttl-1.0">
+   C:        <ttl:ttl for="A">86400</ttl:ttl>
+   C:        <ttl:ttl for="AAAA">3600</ttl:ttl>
+   C:      </ttl:update>
+   C:    </extension>
+   C:    <clTRID>ABC-12345</clTRID>
+   C:  </command>
+   C:</epp>
+
+   If an EPP server receives an <update> command containing a TTL value
+   that is outside the server's permitted range, it MUST reject the
+   command with a 2004 "Parameter value range error" response.
+
+
+
+
+Brown                     Expires 6 March 2025                 [Page 17]
+
+Internet-Draft             TTL mapping for EPP            September 2024
+
+
+3.  Server processing of TTL values
+
+3.1.  Permitted record types
+
+   Servers SHOULD restrict the supported DNS record types in accordance
+   with their own policy.  For example, a server MAY allow clients to
+   specify TTL values for DS records only.
+
+   A server which receives a <create> or <update> command which includes
+   a restricted record type MUST respond with a 2306 "Parameter value
+   policy" error.
+
+   Clients can discover the DNS record types for which an EPP server
+   permits TTL values to be changed by performing a "Policy Mode" <info>
+   command, as outlined in Section 2.1.1.2.
+
+3.2.  Use of TTL values in delegation records
+
+   EPP servers which implement this extension SHOULD use the values
+   provided by EPP clients for the TTL values of records published in
+   the DNS for domain and (if supported) host objects.
+
+   EPP servers that use the "host attribute" model SHOULD use any NS, A
+   and/or AAAA TTL values specified for the domain object when
+   publishing NS, A and/or AAAA records derived from host attributes.
+
+4.  Out-of-band changes to TTL values
+
+   EPP server operators MAY, in order to address operational or security
+   issues, make changes to TTL values out-of-band (that is, not in
+   response to an <update> command received from the sponsoring client).
+
+   Server operators MAY also implement automatic reset of TTL values, so
+   that they revert to the default value a certain amount of time after
+   an update has been made.
+
+   If a TTL value is changed out-of-band, EPP server operators MAY
+   notify the sponsoring client using the EPP Change Poll extension
+   ([RFC8590]), which provides a generalised method for EPP servers to
+   notify clients of changes to objects under their sponsorship.
+
+5.  Operational considerations
+
+5.1.  Operational impact of TTL values
+
+   Registry operators must consider the balance between registrants'
+   desire for changes to domains to be visible in the DNS quickly, and
+   the increased DNS query traffic that short TTLs can bring.
+
+
+
+Brown                     Expires 6 March 2025                 [Page 18]
+
+Internet-Draft             TTL mapping for EPP            September 2024
+
+
+   Registry operators SHOULD implement limits on the maximum and minimum
+   accepted TTL values that are narrower than the values permitted in
+   the XML schema in the Formal syntax (which were chosen to allow any
+   TTL permitted in DNS records), in order to prevent scenarios where an
+   excessively high or low TTL causes operational issues on either side
+   of the zone cut.
+
+   Section 4 describes how server operators MAY unilaterally change TTL
+   values in order to address operational or security issues, or only
+   permit changes for limited time periods (after which TTLs revert to
+   the default).
+
+5.2.  When TTL values should be changed
+
+   A common operational mistake is changing of DNS record TTLs during or
+   after the planned change to the records themselves.  This arises due
+   to a misunderstanding about how TTLs work.
+
+   It is RECOMMENDED that guidance be provided to users so they are
+   aware that changes to a TTL are only effective in shortening
+   transition periods if implemented a period of time — at least equal
+   to the current TTL — _before_ the planned change.  The latency
+   between receipt of the <update> command and the actual publication of
+   the changes in the DNS should also be taken into consideration in
+   this calculation.
+
+6.  Security considerations
+
+6.1.  Fast-flux DNS
+
+   Some malicious actors use a technique called "fast flux DNS"
+   ([SAC-025]) to rapidly change the DNS configuration for a zone in
+   order to evade takedown and law enforcement activity.  Server
+   operators should take this into consideration when setting the lower
+   limit on TTL values, since a short TTL on delegations may enhance the
+   effectiveness of fast flux techniques on evasion.
+
+   Client implementations which provide an interface for customers to
+   configure TTL values for domain names should consider implementing
+   controls to deter and mitigate abusive behaviour, such as those
+   outlined in the "Current and Possible Mitigation Alternatives"
+   section of [SAC-025].
+
+
+
+
+
+
+
+
+
+Brown                     Expires 6 March 2025                 [Page 19]
+
+Internet-Draft             TTL mapping for EPP            September 2024
+
+
+6.2.  Compromised user accounts
+
+   An attacker who obtains access to a customer account at a domain
+   registrar which supports this extension could make unauthorised
+   changes to the NS and/or glue records for a domain, and then increase
+   the associated TTLs so that the changes persist in caches for a long
+   time after the attack has been detected.
+
+   Client implementations which provide an interface for customers to
+   configure TTL values for domain names should consider implementing
+   upper limits in order to reduce the impact of account compromise, in
+   addition to best practices relating to credential management, multi-
+   factor authentication, risk-based access control, and so on.
+
+7.  IANA considerations
+
+7.1.  XML namespace
+
+   This document uses URNs to describe XML namespaces and XML schemas
+   conforming to a registry mechanism described in [RFC3688].  The
+   following URI assignment is requested of IANA:
+
+   Registration for the TTL namespace:
+
+      *URI:* urn:ietf:params:xml:ns:epp:ttl-1.0
+
+      *Registrant Contact:* IESG
+
+      *XML:* None.  Namespace URIs do not represent an XML specification
+
+   Registration for the TTL XML schema:
+
+      *URI:* urn:ietf:params:xml:schema:epp:ttl-1.0
+
+      *Registrant Contact:* IESG
+
+      *XML:* See the "Formal syntax" section of this document
+
+7.2.  EPP extension registry
+
+   The EPP extension described in this document is to be registered by
+   IANA in the Extensions for the "Extensible Provisioning Protocol
+   (EPP)" registry described in [RFC7451].  The details of the
+   registration are as follows:
+
+      *Name of Extension:* Extensible Provisioning Protocol (EPP)
+      Mapping for DNS Time-To-Live (TTL) values
+
+
+
+
+Brown                     Expires 6 March 2025                 [Page 20]
+
+Internet-Draft             TTL mapping for EPP            September 2024
+
+
+      *Document Status:* Standards Track
+
+      *Reference:* URL of this document
+
+      *Registrant Name and Email Address:* IESG
+
+      *TLDs:* Any
+
+      *IPR Disclosure:* None
+
+      *Status:* Active
+
+      *Notes:* None
+
+8.  Formal syntax
+
+   The formal syntax presented here is a complete schema representation
+   of the extension suitable for automated validation of EPP XML
+   instances.
+
+   <?xml version="1.0" encoding="UTF-8"?>
+   <schema
+     xmlns="http://www.w3.org/2001/XMLSchema"
+     targetNamespace="urn:ietf:params:xml:ns:epp:ttl-1.0"
+     xmlns:ttl="urn:ietf:params:xml:ns:epp:ttl-1.0"
+     elementFormDefault="qualified">
+     <annotation>
+       <documentation>
+         Extensible Provisioning Protocol v1.0 extension
+         schema for Time-To-Live (TTL) values for domain
+         and host objects.
+       </documentation>
+     </annotation>
+
+     <element name="info">
+       <complexType>
+         <attribute name="policy" type="boolean" default="false"/>
+       </complexType>
+     </element>
+
+     <!--
+       <ttl> elements can appear in <create> and
+       <update> commands, and <info> responses
+     -->
+
+     <element name="create" type="ttl:commandContainer">
+       <unique name="uniqueRRTypeForCreate">
+         <selector xpath="ttl:ttl"/>
+
+
+
+Brown                     Expires 6 March 2025                 [Page 21]
+
+Internet-Draft             TTL mapping for EPP            September 2024
+
+
+         <field xpath="@for"/>
+       </unique>
+     </element>
+
+     <element name="update" type="ttl:commandContainer">
+       <unique name="uniqueRRTypeForUpdate">
+         <selector xpath="ttl:ttl"/>
+         <field xpath="@for"/>
+       </unique>
+     </element>
+
+     <element name="infData" type="ttl:responseContainer">
+       <unique name="uniqueRRTypeForInfo">
+         <selector xpath="ttl:ttl"/>
+         <field xpath="@for"/>
+       </unique>
+     </element>
+
+     <complexType name="commandContainer">
+       <sequence>
+         <element
+           name="ttl"
+           type="ttl:commandTTLType"
+           minOccurs="1"
+           maxOccurs="unbounded"/>
+       </sequence>
+     </complexType>
+
+     <complexType name="responseContainer">
+       <sequence>
+         <element
+           name="ttl"
+           type="ttl:responseTTLType"
+           minOccurs="1"
+           maxOccurs="unbounded"/>
+       </sequence>
+     </complexType>
+
+     <complexType name="commandTTLType">
+       <simpleContent>
+         <extension base="ttl:ttlOrNull">
+           <attribute
+             name="for"
+             type="ttl:rrType"
+             use="required"/>
+
+           <attribute
+             name="custom"
+
+
+
+Brown                     Expires 6 March 2025                 [Page 22]
+
+Internet-Draft             TTL mapping for EPP            September 2024
+
+
+             type="ttl:customRRType"/>
+         </extension>
+       </simpleContent>
+     </complexType>
+
+     <complexType name="responseTTLType">
+       <simpleContent>
+         <extension base="ttl:ttlOrNull">
+           <attribute
+             name="for"
+             type="ttl:rrType"
+             use="required"/>
+
+           <attribute
+             name="custom"
+             type="ttl:customRRType"/>
+
+           <attribute
+             name="min"
+             type="ttl:ttlValue"/>
+
+           <attribute
+             name="default"
+             type="ttl:ttlValue"/>
+
+           <attribute
+             name="max"
+             type="ttl:ttlValue"/>
+         </extension>
+       </simpleContent>
+     </complexType>
+
+     <!--
+       union type allowing the element to either contain
+       nothing or a TTL value
+     -->
+     <simpleType name="ttlOrNull">
+       <union
+         memberTypes="ttl:emptyValue ttl:ttlValue"/>
+     </simpleType>
+
+     <!-- empty value type -->
+     <simpleType name="emptyValue">
+       <restriction base="token">
+         <length value="0"/>
+       </restriction>
+     </simpleType>
+
+
+
+
+Brown                     Expires 6 March 2025                 [Page 23]
+
+Internet-Draft             TTL mapping for EPP            September 2024
+
+
+     <!-- TTL value type -->
+     <simpleType name="ttlValue">
+       <restriction base="nonNegativeInteger">
+         <minInclusive value="0"/>
+         <maxInclusive value="2147483647"/>
+       </restriction>
+     </simpleType>
+
+     <!-- resource record mnemonic type -->
+     <simpleType name="rrType">
+       <restriction base="token">
+         <enumeration value="NS" />
+         <enumeration value="DS" />
+         <enumeration value="DNAME" />
+         <enumeration value="A" />
+         <enumeration value="AAAA" />
+         <enumeration value="custom" />
+       </restriction>
+     </simpleType>
+
+     <!-- custom resource record type -->
+     <simpleType name="customRRType">
+       <restriction base="token">
+         <pattern value="A|[A-Z][A-Z0-9\-]*[A-Z0-9]"/>
+       </restriction>
+     </simpleType>
+   </schema>
+
+9.  Implementation status
+
+   This section is to be removed before publishing as an RFC.
+
+9.1.  Verisign EPP SDK
+
+   *Organization:* Verisign Inc.
+
+   *Name:* Verisign EPP SDK
+
+   *Description:* The Verisign EPP SDK includes both a full client
+   implementation and a full server stub implementation of this
+   specification.
+
+   *Level of maturity:* Development
+
+   *Coverage:* All aspects of the protocol are implemented.
+
+   *Licensing:* GNU Lesser General Public License
+
+
+
+
+Brown                     Expires 6 March 2025                 [Page 24]
+
+Internet-Draft             TTL mapping for EPP            September 2024
+
+
+   *Contact:* jgould@verisign.com
+
+   *URL:* https://www.verisign.com/en_US/channel-resources/domain-
+   registry-products/epp-sdks
+
+9.2.  Pepper EPP Client
+
+   *Name:* Pepper EPP Client
+
+   *Description:* The Pepper EPP client fully implements this
+   specification.  The underlying Net::EPP:: Perl module also implements
+   this specification.
+
+   *Level of maturity:* Development
+
+   *Coverage:* All aspects of the protocol will be implemented.
+
+   *Licensing:* Perl Artistic License
+
+   *Contact:* The author of this document.
+
+   *URL:* https://github.com/gbxyz/pepper
+
+10.  Change log
+
+   This section is to be removed before publishing as an RFC.
+
+10.1.  Changes from 15 to 16
+
+   1.  Updates as suggested during IESG review.
+
+10.2.  Changes from 14 to 15
+
+   1.  Updates as suggested during AD review.
+
+   2.  In the last paragraph of Section 3.2, make both lists of RR types
+       be the same.
+
+   3.  Update error codes to be consistent: 2004 (range error) when the
+       TTL value is outside the permitted range, and 2306 (policy error)
+       for an invalid record type.
+
+   4.  Correct section in reference to RFC 6895 (thanks Jasdip Singh).
+
+   5.  Minor typographic fixes (thanks Jasdip Singh).
+
+10.3.  Changes from 13 to 14
+
+
+
+
+Brown                     Expires 6 March 2025                 [Page 25]
+
+Internet-Draft             TTL mapping for EPP            September 2024
+
+
+   1.  Resolve remaining nit before IESG submission.
+
+10.4.  Changes from 12 to 13
+
+   1.  Updates as per the document shepherd's suggestions.
+
+10.5.  Changes from 11 to 12
+
+   1.  Updates as per the document shepherd's email to the list of
+       2024-06-10.
+
+10.6.  Changes from 10 to 11
+
+   1.  Fix double word in Section 3.2.
+
+10.7.  Changes from 09 to 10
+
+   Changes resulting from the Dnsdir review:
+
+   1.  Fixed example IPv6 addresses to use the preferred prefix
+       2001:DB8::.
+
+   2.  Added paragraph to Section 3.1 describing how clients can use the
+       Policy Mode <info> command (Section 2.1.1.2) to discover the DNS
+       record types supported by the server.
+
+10.8.  Changes from 08 to 09
+
+   1.  Some wording changes suggested by James Gould and Tim Wicinski.
+
+10.9.  Changes from 07 to 08
+
+   1.  Some wording changes suggested by Rick Wilhelm.
+
+10.10.  Changes from 06 to 07
+
+   1.  Minor wording changes and nits reported by JG.
+
+10.11.  Changes from 05 to 06
+
+   1.  Changed how <info> commands work so that a <ttl:info> element is
+       required in order for <ttl:ttl> elements to be included in the
+       response.  Thanks to JG for this feedback.
+
+10.12.  Changes from 04 to 05
+
+
+
+
+
+
+Brown                     Expires 6 March 2025                 [Page 26]
+
+Internet-Draft             TTL mapping for EPP            September 2024
+
+
+   1.  removed the erroneous required="true" attribute from the min,
+       default and max attributes of the responseTTLType type (thanks
+       JG).
+
+   2.  fixed the reference to RFC 6895 (thanks HS).
+
+10.13.  Changes from 04 to 05
+
+   1.  Add the Verisign EPP SDK to Section 9.
+
+   2.  Add the <ttl:info> element and document how it affects server
+       <info> responses.
+
+   3.  Updated examples to exercise more of the schema.
+
+   4.  Minor schema issue fixed.
+
+10.14.  Changes from 03 to 04
+
+   1.  Changed the for attribute to be an enumeration and added the
+       custom attribute.
+
+   2.  Added the min, default and max attributes.
+
+   3.  Apply feedback from Jim Gould.
+
+10.15.  Changes from 02 to 03
+
+   1.  Rolled back the "straw man" syntax from 02. ttl:ttl now has a for
+       attribute which can be any DNS record type.  Section 1.2.1.2
+       describes how the set of supported record types may be limited.
+
+   2.  Removed the global/explicit models and just use the explicit
+       model.
+
+   3.  Removed the cascading effect where a TTL set on a domain affects
+       subordinate hosts.
+
+10.16.  Changes from 01 to 02
+
+   1.  Renamed the ttl:seconds XSD type to ttl:container, and the
+       ttl:nonNegativeInteger type to ttl:ttlType, to permit multiple
+       TTL values.
+
+   2.  Converted XML instances from artwork to source code.
+
+10.17.  Changes from 00 to 01
+
+
+
+
+Brown                     Expires 6 March 2025                 [Page 27]
+
+Internet-Draft             TTL mapping for EPP            September 2024
+
+
+   1.  Incorporate feedback from Jim Gould.
+
+   2.  Add wording to describe how TTL values are jointly managed by
+       both clients and servers.
+
+   3.  Fix minimum/maximum TTL value and schema namespace (thanks
+       Patrick Mevzek).
+
+   4.  Moved text on how the server should handle impermissible TTL
+       values from the top of Section 4 to Sections 3.2.1 and 3.2.2
+       (thanks Rick Wilhelm).
+
+   5.  Namespace changed from urn:ietf:params:xml:ns:ttl-1.0 to
+       urn:ietf:params:xml:ns:epp:ttl-1.0.
+
+   6.  Added discussion on EPP servers which use the host attribute
+       model in Section 3.2 (thanks Hugo Salgado).
+
+   7.  Added a Change Log (Section 10).
+
+11.  Acknowledgements
+
+   The author wishes to thank the following people for their advice and
+   feedback during the development of this document:
+
+   1.  James Gould
+
+   2.  Hugo Salgado
+
+   3.  Patrick Mevzek
+
+   4.  Rick Wilhelm
+
+   5.  Marc Groeneweg
+
+   6.  Ties de Kock
+
+   7.  Tim Wicinski
+
+   8.  Jasdip Singh
+
+12.  References
+
+12.1.  Normative references
+
+
+
+
+
+
+
+Brown                     Expires 6 March 2025                 [Page 28]
+
+Internet-Draft             TTL mapping for EPP            September 2024
+
+
+   [RFC2119]  Bradner, S., "Key words for use in RFCs to Indicate
+              Requirement Levels", BCP 14, RFC 2119,
+              DOI 10.17487/RFC2119, March 1997,
+              <https://www.rfc-editor.org/info/rfc2119>.
+
+   [RFC3688]  Mealling, M., "The IETF XML Registry", BCP 81, RFC 3688,
+              DOI 10.17487/RFC3688, January 2004,
+              <https://www.rfc-editor.org/info/rfc3688>.
+
+   [RFC5731]  Hollenbeck, S., "Extensible Provisioning Protocol (EPP)
+              Domain Name Mapping", STD 69, RFC 5731,
+              DOI 10.17487/RFC5731, August 2009,
+              <https://www.rfc-editor.org/info/rfc5731>.
+
+   [RFC5732]  Hollenbeck, S., "Extensible Provisioning Protocol (EPP)
+              Host Mapping", STD 69, RFC 5732, DOI 10.17487/RFC5732,
+              August 2009, <https://www.rfc-editor.org/info/rfc5732>.
+
+   [RFC5910]  Gould, J. and S. Hollenbeck, "Domain Name System (DNS)
+              Security Extensions Mapping for the Extensible
+              Provisioning Protocol (EPP)", RFC 5910,
+              DOI 10.17487/RFC5910, May 2010,
+              <https://www.rfc-editor.org/info/rfc5910>.
+
+   [RFC6895]  Eastlake 3rd, D., "Domain Name System (DNS) IANA
+              Considerations", BCP 42, RFC 6895, DOI 10.17487/RFC6895,
+              April 2013, <https://www.rfc-editor.org/info/rfc6895>.
+
+   [RFC8174]  Leiba, B., "Ambiguity of Uppercase vs Lowercase in RFC
+              2119 Key Words", BCP 14, RFC 8174, DOI 10.17487/RFC8174,
+              May 2017, <https://www.rfc-editor.org/info/rfc8174>.
+
+   [XSD-DATATYPES]
+              World Wide Web Consortium (W3C), "XML Schema Part 2:
+              Datatypes Second Edition", October 2004,
+              <https://www.w3.org/TR/xmlschema-2/>.
+
+12.2.  Informative references
+
+   [RFC6927]  Levine, J. and P. Hoffman, "Variants in Second-Level Names
+              Registered in Top-Level Domains", RFC 6927,
+              DOI 10.17487/RFC6927, May 2013,
+              <https://www.rfc-editor.org/info/rfc6927>.
+
+   [RFC7451]  Hollenbeck, S., "Extension Registry for the Extensible
+              Provisioning Protocol", RFC 7451, DOI 10.17487/RFC7451,
+              February 2015, <https://www.rfc-editor.org/info/rfc7451>.
+
+
+
+
+Brown                     Expires 6 March 2025                 [Page 29]
+
+Internet-Draft             TTL mapping for EPP            September 2024
+
+
+   [RFC8590]  Gould, J. and K. Feher, "Change Poll Extension for the
+              Extensible Provisioning Protocol (EPP)", RFC 8590,
+              DOI 10.17487/RFC8590, May 2019,
+              <https://www.rfc-editor.org/info/rfc8590>.
+
+   [RFC9364]  Hoffman, P., "DNS Security Extensions (DNSSEC)", BCP 237,
+              RFC 9364, DOI 10.17487/RFC9364, February 2023,
+              <https://www.rfc-editor.org/info/rfc9364>.
+
+   [RFC9499]  Hoffman, P. and K. Fujiwara, "DNS Terminology", BCP 219,
+              RFC 9499, DOI 10.17487/RFC9499, March 2024,
+              <https://www.rfc-editor.org/info/rfc9499>.
+
+   [SAC-025]  ICANN Security and Stability Advisory Committee (SSAC),
+              "SSAC Advisory on Fast Flux Hosting and DNS", SAC 25,
+              January 2008,
+              <https://www.icann.org/en/system/files/files/sac-
+              025-en.pdf>.
+
+Author's Address
+
+   Gavin Brown
+   ICANN
+   12025 Waterfront Drive, Suite 300
+   Los Angeles, CA 90292
+   United States of America
+   Email: gavin.brown@icann.org
+   URI:   https://www.icann.org/
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Brown                     Expires 6 March 2025                 [Page 30]
