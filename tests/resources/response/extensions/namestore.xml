@@ -1,3 +1,7 @@
+<!-- Source: Verisign EPP SDK - Namestore Extension Mapping v1.1 -->
+<!-- URL: https://www.verisign.com/assets/epp-sdk/verisign_epp-extension_namestoreext_v01.html -->
+<!-- Description: Domain check response with namestore extension -->
+<!-- Notes: Response shows domain availability -->
 <?xml version="1.0" encoding="UTF-8" standalone="no"?>
 <epp xmlns="urn:ietf:params:xml:ns:epp-1.0">
     <response>
