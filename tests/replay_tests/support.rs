@@ -68,7 +68,7 @@ pub fn len_bytes(bytes: &str) -> [u8; 4] {
 /// # Example
 ///
 /// ```ignore
-/// let xml = get_xml("request/extensions/namestore.xml").unwrap();
+/// let xml = get_xml("request/extensions/namestore/namestore.xml").unwrap();
 /// ```
 pub fn xml(path: impl AsRef<Path>) -> Result<String, anyhow::Error> {
     let ws_regex = Regex::new(r"[\s]{2,}")?;
@@ -145,7 +145,7 @@ pub fn strip_xml_comments(xml: &str) -> String {
 /// ```ignore
 /// let check = DomainCheck { domains: &["example.com"] };
 /// let ext = NameStore { subproduct: Cow::Borrowed("com") };
-/// assert_serialized("request/extensions/namestore.xml", (&check, &ext));
+/// assert_serialized("request/extensions/namestore/namestore.xml", (&check, &ext));
 /// ```
 pub fn assert_serialized<'c, 'e, Cmd, Ext>(
     path: impl AsRef<Path>,
@@ -183,7 +183,7 @@ pub fn assert_serialized<'c, 'e, Cmd, Ext>(
 ///
 /// ```ignore
 /// let response = response_from_file::<DomainCheck, NameStore>(
-///     "response/extensions/namestore.xml",
+///     "response/extensions/namestore/namestore.xml",
 /// );
 /// assert_eq!(response.result.code, ResultCode::CommandCompletedSuccessfully);
 /// ```

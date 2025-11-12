@@ -66,14 +66,15 @@ mod namestore_tests {
             subproduct: Cow::Borrowed("com"),
         };
 
-        assert_serialized("request/extensions/namestore.xml", (&check, &ext));
+        assert_serialized("request/extensions/namestore/namestore.xml", (&check, &ext));
     }
 
     /// Test Namestore extension response deserialization for domain check
     #[test]
     fn namestore_domain_check_response() {
-        let response =
-            response_from_file::<DomainCheck, NameStore>("response/extensions/namestore.xml");
+        let response = response_from_file::<DomainCheck, NameStore>(
+            "response/extensions/namestore/namestore.xml",
+        );
 
         assert_eq!(
             response.result.code,
@@ -103,7 +104,6 @@ mod namestore_tests {
 // Reference: RFC 3915 - Domain Registry Grace Period Mapping for EPP
 
 mod rgp_tests {
-    use super::*;
 
     /// Test RGP restore request operation (op="request")
     ///
@@ -177,7 +177,6 @@ mod rgp_tests {
 // Reference: RFC 5910 - DNSSEC Extensions Mapping for EPP
 
 mod secdns_tests {
-    use super::*;
 
     /// Test domain create with single DS record
     ///
@@ -261,7 +260,6 @@ mod secdns_tests {
 // Reference: Verisign EPP SDK - Low Balance Poll Extension
 
 mod balance_tests {
-    use super::*;
 
     /// Test low balance poll message deserialization
     #[test]
@@ -293,7 +291,6 @@ mod balance_tests {
 // Reference: ChangePoll Extension Specification
 
 mod changepoll_tests {
-    use super::*;
 
     /// Test domain transfer change notification (after state)
     #[test]
@@ -355,7 +352,6 @@ mod changepoll_tests {
 // Reference: Verisign EPP SDK - Sync Extension
 
 mod sync_tests {
-    use super::*;
 
     /// Test sync domain update request
     #[test]
@@ -384,7 +380,6 @@ mod sync_tests {
 // a single EPP command or response.
 
 mod multi_extension_tests {
-    use super::*;
 
     /// Test Namestore + RGP restore request combination
     ///
@@ -420,19 +415,4 @@ mod multi_extension_tests {
     fn multi_extension_order_preservation() {
         // Placeholder
     }
-}
-
-// ============================================================================
-// Integration Tests
-// ============================================================================
-//
-// These tests verify that extensions work correctly in end-to-end scenarios
-// with actual EPP client transactions.
-
-#[cfg(test)]
-mod integration_tests {
-    use super::*;
-
-    // Integration tests will be added as we implement the fixtures
-    // and complete the individual extension tests
 }

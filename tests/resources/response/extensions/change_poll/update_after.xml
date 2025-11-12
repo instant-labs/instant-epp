@@ -1,10 +1,9 @@
+<!-- Source: RFC 8590 - Change Poll Extension -->
+<!-- Spec: rfcs/epp-change-poll-rfc8590.txt -->
+<!-- Description: Change poll message with "after" state for host update -->
+<!-- Notes: Shows host state after registry-initiated update with status changes -->
+<!-- Namespace: urn:ietf:params:xml:ns:changePoll-1.0 -->
 <?xml version="1.0" encoding="UTF-8"?>
-<!--
-An example poll <info> response with the
-<changePoll:changeData> extension for an "update" operation on the
-ns1.domain.example host, with the default "after" state.  The "after"
-state is reflected in the <resData> block
--->
 <epp xmlns="urn:ietf:params:xml:ns:epp-1.0">
    <response>
       <result code="1301">

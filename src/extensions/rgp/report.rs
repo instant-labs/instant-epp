@@ -132,7 +132,7 @@ mod tests {
         });
 
         assert_serialized(
-            "request/extensions/rgp_restore_report.xml",
+            "request/extensions/rgp/rgp_restore_report.xml",
             (&object, &domain_restore_report),
         );
     }

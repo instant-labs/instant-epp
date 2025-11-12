@@ -1,11 +1,9 @@
+<!-- Source: RFC 8590 - Change Poll Extension -->
+<!-- Spec: rfcs/epp-change-poll-rfc8590.txt -->
+<!-- Description: Change poll message with "before" state for auto-purge -->
+<!-- Notes: Shows domain state before automatic purge after pendingDelete period -->
+<!-- Namespace: urn:ietf:params:xml:ns:changePoll-1.0 -->
 <?xml version="1.0" encoding="UTF-8"?>
-<!--
-An example poll <info> response with the
-<changePoll:changeData> extension for an "autoPurge" operation on the
-domain.example domain name that previously had the "pendingDelete"
-status, with the "before" state.  The "before" state is reflected in
-the <resData> block
--->
 <epp xmlns="urn:ietf:params:xml:ns:epp-1.0">
   <response>
     <result code="1301">

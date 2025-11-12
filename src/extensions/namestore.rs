@@ -89,7 +89,7 @@ mod tests {
         };
 
         assert_serialized(
-            "request/extensions/namestore.xml",
+            "request/extensions/namestore/namestore.xml",
             (&object, &namestore_ext),
         );
     }
@@ -97,7 +97,7 @@ mod tests {
     #[test]
     fn response() {
         let object = response_from_file_with_ext::<DomainCheck, NameStore>(
-            "response/extensions/namestore.xml",
+            "response/extensions/namestore/namestore.xml",
         );
         let ext = object.extension().unwrap();
         assert_eq!(ext.subproduct, "com");

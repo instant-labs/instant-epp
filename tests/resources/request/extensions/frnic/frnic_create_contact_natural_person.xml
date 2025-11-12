@@ -1,0 +1,39 @@
+<!-- Source: AFNIC (French Registry) Contact Extension -->
+<!-- Spec: AFNIC EPP documentation - http://www.afnic.fr/xml/epp/frnic-2.0 -->
+<!-- Description: Contact create with FRNIC extension for natural person -->
+<!-- Notes: Creates a contact for a natural person with firstName field -->
+<!-- Namespace: http://www.afnic.fr/xml/epp/frnic-2.0 -->
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<epp xmlns="urn:ietf:params:xml:ns:epp-1.0">
+    <command>
+        <create>
+            <create xmlns="urn:ietf:params:xml:ns:contact-1.0">
+                <id>XXX000</id>
+                <postalInfo type="loc">
+                    <name>Dupont</name>
+                    <addr>
+                        <street>1 Rue des fleurs</street>
+                        <city>Paris</city>
+                        <pc>75000</pc>
+                        <cc>FR</cc>
+                    </addr>
+                </postalInfo>
+                <voice>+33.1234567890</voice>
+                <email>test@test.fr</email>
+                <authInfo>
+                    <pw>Afn-12345678</pw>
+                </authInfo>
+            </create>
+        </create>
+        <extension>
+            <ext xmlns="http://www.afnic.fr/xml/epp/frnic-2.0">
+                <create>
+                    <contact>
+                        <firstName>Michel</firstName>
+                    </contact>
+                </create>
+            </ext>
+        </extension>
+        <clTRID>cltrid:1626454866</clTRID>
+    </command>
+</epp>

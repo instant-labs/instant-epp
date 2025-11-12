@@ -40,7 +40,7 @@ mod tests {
 
     #[test]
     fn low_balance() {
-        let object = response_from_file::<Poll>("response/poll/poll_low_balance.xml");
+        let object = response_from_file::<Poll>("response/extensions/low_balance/poll_low_balance.xml");
         dbg!(&object);
 
         let low_balance = match object.res_data() {

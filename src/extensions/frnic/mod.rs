@@ -51,7 +51,7 @@ mod tests {
             "Afn-12345678",
         );
         assert_serialized(
-            "request/extensions/frnic_create_contact_natural_person.xml",
+            "request/extensions/frnic/frnic_create_contact_natural_person.xml",
             (&object, &frnic_contact),
         );
     }
@@ -81,7 +81,7 @@ mod tests {
             "Afn-123456",
         );
         assert_serialized(
-            "request/extensions/frnic_create_contact_company.xml",
+            "request/extensions/frnic/frnic_create_contact_company.xml",
             (&object, &frnic_contact),
         );
     }
@@ -115,7 +115,7 @@ mod tests {
             "Afn-123456",
         );
         assert_serialized(
-            "request/extensions/frnic_create_contact_siren.xml",
+            "request/extensions/frnic/frnic_create_contact_siren.xml",
             (&object, &frnic_contact),
         );
     }
@@ -151,7 +151,7 @@ mod tests {
             "Afn-123456",
         );
         assert_serialized(
-            "request/extensions/frnic_create_contact_non_profit.xml",
+            "request/extensions/frnic/frnic_create_contact_non_profit.xml",
             (&object, &frnic_contact),
         );
     }

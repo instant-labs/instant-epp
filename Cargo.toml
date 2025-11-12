@@ -9,8 +9,18 @@ repository = "https://github.com/instant-labs/instant-epp"
 
 [features]
 default = ["rustls-aws-lc-rs"]
-rustls-aws-lc-rs = ["dep:tokio-rustls", "tokio-rustls/aws-lc-rs", "dep:rustls-platform-verifier", "__rustls"]
-rustls-ring = ["dep:tokio-rustls", "tokio-rustls/ring", "dep:rustls-platform-verifier", "__rustls"]
+rustls-aws-lc-rs = [
+    "dep:tokio-rustls",
+    "tokio-rustls/aws-lc-rs",
+    "dep:rustls-platform-verifier",
+    "__rustls",
+]
+rustls-ring = [
+    "dep:tokio-rustls",
+    "tokio-rustls/ring",
+    "dep:rustls-platform-verifier",
+    "__rustls",
+]
 __rustls = []
 
 [dependencies]
@@ -21,7 +31,10 @@ instant-xml = { version = "0.5", features = ["chrono"] }
 rustls-platform-verifier = { version = "0.4", optional = true }
 serde = { version = "1.0", features = ["derive"] }
 tokio = { version = "1.0", features = ["io-util", "net", "time"] }
-tokio-rustls = { version = "0.26", optional = true, default-features = false, features = ["logging", "tls12"] }
+tokio-rustls = { version = "0.26", optional = true, default-features = false, features = [
+    "logging",
+    "tls12",
+] }
 tracing = "0.1.29"
 
 [dev-dependencies]
@@ -30,3 +43,4 @@ tokio = { version = "1.0", features = ["macros", "rt-multi-thread"] }
 tokio-test = "0.4"
 tracing-subscriber = "0.3.3"
 similar-asserts = "1.4.2"
+anyhow = "1.0"

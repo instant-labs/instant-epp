@@ -1,0 +1,47 @@
+<!-- Source: RFC - Verisign Namestore Extension Mapping v1.0 -->
+<!-- Spec: rfcs/verisign_epp-extension_namestoreext_v01.txt -->
+<!-- Description: Domain info response with namestore extension -->
+<!-- Notes: Response includes domain details with namestore extension -->
+<!-- Namespace: http://www.verisign-grs.com/epp/namestoreExt-1.1 -->
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<epp xmlns="urn:ietf:params:xml:ns:epp-1.0">
+    <response>
+        <result code="1000">
+            <msg>Command completed successfully</msg>
+        </result>
+        <resData>
+            <infData xmlns="urn:ietf:params:xml:ns:domain-1.0">
+                <name>eppdev.com</name>
+                <roid>EXAMPLE1-REP</roid>
+                <status s="ok"></status>
+                <registrant>eppdev-contact-3</registrant>
+                <contact type="admin">eppdev-contact-3</contact>
+                <contact type="tech">eppdev-contact-3</contact>
+                <contact type="billing">eppdev-contact-3</contact>
+                <ns>
+                    <hostObj>ns1.eppdev.com</hostObj>
+                    <hostObj>ns2.eppdev.com</hostObj>
+                </ns>
+                <host>ns1.eppdev.com</host>
+                <host>ns2.eppdev.com</host>
+                <clID>ClientX</clID>
+                <crID>ClientY</crID>
+                <crDate>2021-07-23T15:31:21.0Z</crDate>
+                <exDate>2023-07-23T15:31:21.0Z</exDate>
+                <authInfo>
+                    <pw>2fooBAR</pw>
+                </authInfo>
+            </infData>
+        </resData>
+        <extension>
+            <namestoreExt xmlns="http://www.verisign-grs.com/epp/namestoreExt-1.1">
+                <subProduct>com</subProduct>
+            </namestoreExt>
+        </extension>
+        <trID>
+            <clTRID>cltrid:1626454866</clTRID>
+            <svTRID>RO-6879-1627224678242975</svTRID>
+        </trID>
+    </response>
+</epp>
+

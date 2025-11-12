@@ -1,10 +1,9 @@
+<!-- Source: RFC 8590 - Change Poll Extension -->
+<!-- Spec: rfcs/epp-change-poll-rfc8590.txt -->
+<!-- Description: Change poll message with "before" state for URS lock -->
+<!-- Notes: Shows domain state before URS (Uniform Rapid Suspension) lock was applied -->
+<!-- Namespace: urn:ietf:params:xml:ns:changePoll-1.0 -->
 <?xml version="1.0" encoding="UTF-8"?>
-<!--
-An example poll <info> response with the
-<changePoll:changeData> extension for a URS lock transaction on the
-domain.example domain name, with the "before" state.  The "before"
-state is reflected in the <resData> block
--->
 <epp xmlns="urn:ietf:params:xml:ns:epp-1.0">
    <response>
       <result code="1301">

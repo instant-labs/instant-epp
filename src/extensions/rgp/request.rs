@@ -94,7 +94,7 @@ mod tests {
         object.info(change_info);
 
         assert_serialized(
-            "request/extensions/rgp_restore_request.xml",
+            "request/extensions/rgp/rgp_restore_request.xml",
             (&object, &domain_restore_request),
         );
     }
@@ -102,7 +102,7 @@ mod tests {
     #[test]
     fn request_response() {
         let object = response_from_file_with_ext::<DomainUpdate, Update<RgpRestoreRequest>>(
-            "response/extensions/rgp_restore.xml",
+            "response/extensions/rgp/rgp_restore.xml",
         );
         let ext = object.extension.unwrap();
 
@@ -121,7 +121,7 @@ mod tests {
     #[test]
     fn domain_info_request_response() {
         let object = response_from_file_with_ext::<DomainInfo, Update<RgpRestoreRequest>>(
-            "response/extensions/domain_info_rgp.xml",
+            "response/extensions/rgp/domain_info_rgp.xml",
         );
         let ext = object.extension.unwrap();
 

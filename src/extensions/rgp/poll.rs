@@ -25,7 +25,7 @@ mod tests {
 
     #[test]
     fn rgp_poll_data() {
-        let object = response_from_file::<Poll>("response/poll/poll_rgp_restore.xml");
+        let object = response_from_file::<Poll>("response/extensions/rgp_poll/poll_rgp_restore.xml");
         let Some(PollData::RgpPoll(data)) = object.res_data() else {
             panic!("expected RgpPollData");
         };

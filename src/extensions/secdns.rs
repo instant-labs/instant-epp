@@ -421,7 +421,7 @@ mod tests {
             Some(&contact),
         );
         assert_serialized(
-            "request/extensions/secdns_create_ds.xml",
+            "request/extensions/secdns/secdns_create_ds.xml",
             (&object, &extension),
         );
     }
@@ -469,7 +469,7 @@ mod tests {
             Some(&contact),
         );
         assert_serialized(
-            "request/extensions/secdns_create_ds_key.xml",
+            "request/extensions/secdns/secdns_create_ds_key.xml",
             (&object, &extension),
         );
     }
@@ -510,7 +510,7 @@ mod tests {
             Some(&contact),
         );
         assert_serialized(
-            "request/extensions/secdns_create_key.xml",
+            "request/extensions/secdns/secdns_create_key.xml",
             (&object, &extension),
         );
     }

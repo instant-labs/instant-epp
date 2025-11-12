@@ -128,7 +128,7 @@ mod tests {
         });
 
         assert_serialized(
-            "request/extensions/consolidate.xml",
+            "request/extensions/sync/consolidate.xml",
             (&object, &consolidate_ext),
         );
     }
@@ -147,7 +147,7 @@ mod tests {
         });
 
         assert_serialized(
-            "request/extensions/consolidate_namestore.xml",
+            "request/extensions/sync/consolidate_namestore.xml",
             (&object, &consolidate_ext),
         );
     }
